@@ -227,6 +227,23 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(patch_stage.max_lines, 100)
             self.assertEqual(patch_stage.forbidden_paths, ("secrets",))
 
+    def test_file_writer_stage_requires_agent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            init_project(root)
+            config_path = root / "nightshift.yaml"
+            text = config_path.read_text(encoding="utf-8")
+            config_path.write_text(
+                text.replace(
+                    "    - id: plan\n      type: agent\n      agent: planner\n      output: plan.md",
+                    "    - id: write\n      type: file_writer",
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ConfigError, "file_writer stage 'write' must reference an agent"):
+                load_config(config_path)
+
     def test_patch_apply_mode_loads(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

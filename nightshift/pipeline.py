@@ -22,7 +22,9 @@ from .patches import (
     extract_unified_diff,
     format_patch_apply_result,
     format_validation_result,
+    generate_patch_from_file_updates,
     normalize_patch_text,
+    parse_file_updates,
     validate_patch,
 )
 from .project_chart import build_project_context_chart
@@ -369,6 +371,8 @@ class PipelineRunner:
             return self.command_executor.run_stage(stage, task.id)
         if stage.type == "code_writer":
             return self._run_code_writer_stage(stage, task, previous_outputs, retry_notes, retry_count)
+        if stage.type == "file_writer":
+            return self._run_file_writer_stage(stage, task, previous_outputs, retry_notes, retry_count)
         if stage.type == "patch_normalizer":
             return self._run_patch_normalizer_stage(stage, task, previous_outputs, retry_notes, retry_count)
         if stage.type == "patch_validator":
@@ -512,6 +516,110 @@ class PipelineRunner:
             stage.id,
             "pass",
             "Proposed patch written.",
+            output_path=str(proposed_path.relative_to(self.config.project.root)),
+            context_update=f"Implementation summary: {summary_path.relative_to(self.config.project.root).as_posix()}",
+        )
+
+    def _run_file_writer_stage(
+        self,
+        stage: StageConfig,
+        task: Task,
+        previous_outputs: dict[str, str],
+        retry_notes: list[str],
+        retry_count: int = 0,
+    ) -> StageResult:
+        if stage.agent is None:
+            raise PipelineError(f"Pipeline error: file_writer stage '{stage.id}' must reference an agent.")
+        enriched_outputs = dict(previous_outputs)
+        context_pack_path = self._latest_task_artifact(task.id, "context-pack.md")
+        if context_pack_path is not None:
+            enriched_outputs["context-pack.md"] = context_pack_path.read_text(encoding="utf-8", errors="replace")
+        chart_path = self.artifacts.project_context_chart_path
+        if chart_path.exists():
+            enriched_outputs["project-context-chart.md"] = chart_path.read_text(encoding="utf-8", errors="replace")
+        context = self.context.read_context(task, retry_notes)
+        result = self.agent_executor.run_stage(
+            stage,
+            task,
+            enriched_outputs,
+            retry_notes,
+            project_context=context.project_context,
+            task_context=context.task_context,
+            retry_context=context.retry_context,
+        )
+        raw_output = self._read_output(result.output_path)
+        stdout = extract_agent_stdout(raw_output)
+        lookup_requests = parse_lookup_requests(stdout)
+        if lookup_requests and "```file:" not in stdout.lower() and "```path:" not in stdout.lower():
+            lookup_context = self.repo_tools.execute_requests(
+                task.id,
+                lookup_requests,
+                filename="implementation-files-inspected.md",
+            )
+            self.logger.event(
+                "agent.rerun",
+                "Re-running file writer with repo lookup context",
+                stage_id=stage.id,
+                task_id=task.id,
+                lookup_count=len(lookup_requests),
+            )
+            rerun_outputs = dict(enriched_outputs)
+            rerun_outputs["repo_lookup_results"] = lookup_context
+            rerun_notes = [
+                *retry_notes,
+                "Repository lookup results have been provided. Return complete file blocks now; do not request more lookups.",
+            ]
+            result = self.agent_executor.run_stage(
+                stage,
+                task,
+                rerun_outputs,
+                rerun_notes,
+                project_context=context.project_context,
+                task_context=context.task_context,
+                retry_context="\n".join(f"- {note}" for note in rerun_notes),
+            )
+            raw_output = self._read_output(result.output_path)
+            stdout = extract_agent_stdout(raw_output)
+        try:
+            updates = parse_file_updates(stdout)
+            patch = generate_patch_from_file_updates(
+                updates,
+                self.config.project.root,
+                self.config.safety,
+                forbidden_paths=stage.forbidden_paths or DEFAULT_FORBIDDEN_PATHS,
+            )
+        except PipelineError as exc:
+            summary_filename = "implementation-summary.md" if retry_count == 0 else f"repair-summary-{retry_count}.md"
+            self.artifacts.write_stage_output(
+                task.id,
+                summary_filename,
+                f"# Implementation Summary\n\nStatus: fail\nReason: {exc}\n",
+            )
+            return StageResult(stage.id, "fail", str(exc), output_path=result.output_path)
+        patch_filename = "repair-{0}.patch".format(retry_count) if retry_count else (stage.output or "proposed.patch")
+        summary_filename = "implementation-summary.md" if retry_count == 0 else f"repair-summary-{retry_count}.md"
+        proposed_path = self.artifacts.write_stage_output(task.id, patch_filename, patch)
+        summary_path = self.artifacts.write_stage_output(
+            task.id,
+            summary_filename,
+            format_implementation_summary(
+                stage.id,
+                proposed_path.relative_to(self.config.project.root).as_posix(),
+                retry_count=retry_count,
+                retry_notes=retry_notes,
+            ),
+        )
+        self.logger.event(
+            "artifact.write",
+            "Wrote deterministic patch from file blocks",
+            stage_id=stage.id,
+            task_id=task.id,
+            artifact_path=proposed_path.relative_to(self.config.project.root),
+        )
+        return StageResult(
+            stage.id,
+            "pass",
+            "Deterministic patch written from file blocks.",
             output_path=str(proposed_path.relative_to(self.config.project.root)),
             context_update=f"Implementation summary: {summary_path.relative_to(self.config.project.root).as_posix()}",
         )

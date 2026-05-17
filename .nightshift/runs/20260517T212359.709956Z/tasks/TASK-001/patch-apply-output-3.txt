@@ -1,0 +1,29 @@
+# Patch Apply
+
+Status: fail
+Mode: apply
+Patch: `.nightshift/runs/20260517T212359.709956Z/tasks/TASK-001/applied-3.patch`
+Command: `git apply --ignore-whitespace C:\Users\metis\Documents\tiny-lisp-nightshift\.nightshift\runs\20260517T212359.709956Z\tasks\TASK-001\applied-3.patch`
+Exit code: 128
+
+## stdout
+
+```text
+
+```
+
+## stderr
+
+```text
+C:/Users/metis/Documents/tiny-lisp-nightshift/.nightshift/runs/20260517T212359.709956Z/tasks/TASK-001/applied-3.patch:6: trailing whitespace.
+import re
+C:/Users/metis/Documents/tiny-lisp-nightshift/.nightshift/runs/20260517T212359.709956Z/tasks/TASK-001/applied-3.patch:7: trailing whitespace.
+
+C:/Users/metis/Documents/tiny-lisp-nightshift/.nightshift/runs/20260517T212359.709956Z/tasks/TASK-001/applied-3.patch:8: trailing whitespace.
+class LispParser:
+C:/Users/metis/Documents/tiny-lisp-nightshift/.nightshift/runs/20260517T212359.709956Z/tasks/TASK-001/applied-3.patch:9: trailing whitespace.
+    def __init__(self, expression):
+C:/Users/metis/Documents/tiny-lisp-nightshift/.nightshift/runs/20260517T212359.709956Z/tasks/TASK-001/applied-3.patch:10: trailing whitespace.
+        self.expression = expression
+error: corrupt patch at line 48
+```

@@ -1,1 +1,1 @@
-"""NightShift test suite."""
+"""Quickstart Lisp test suite."""

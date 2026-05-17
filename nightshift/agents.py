@@ -443,6 +443,19 @@ def output_contract_for(stage: StageConfig) -> str:
                 "On repair attempts, return a complete corrected replacement diff.",
             ]
         )
+    if stage.type == "file_writer":
+        return "\n".join(
+            [
+                "Return complete file contents only.",
+                "Use one fenced block per file with this exact opening form:",
+                "```file:relative/path.py",
+                "<complete file content>",
+                "```",
+                "Do not include prose outside file blocks.",
+                "Include every file needed for the task, including tests.",
+                "NightShift will generate the unified diff deterministically.",
+            ]
+        )
     if stage.type == "patch_normalizer":
         return "\n".join(
             [

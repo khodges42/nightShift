@@ -92,6 +92,7 @@ AGENT_STAGE_TYPES = {"agent", "agent_review", "review"}
 COMMAND_STAGE_TYPES = {"command"}
 SUPPORTED_STAGE_TYPES = AGENT_STAGE_TYPES | COMMAND_STAGE_TYPES | {
     "code_writer",
+    "file_writer",
     "patch_normalizer",
     "patch_apply",
     "patch_validator",
@@ -314,9 +315,9 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
                     f"Config error: pipeline stage '{stage_id}' references unknown agent "
                     f"'{agent}'. Defined agents: {defined}."
                 )
-        if stage_type == "code_writer":
+        if stage_type in {"code_writer", "file_writer"}:
             if agent is None:
-                raise ConfigError(f"Config error: code_writer stage '{stage_id}' must reference an agent.")
+                raise ConfigError(f"Config error: {stage_type} stage '{stage_id}' must reference an agent.")
             if agent not in agents:
                 defined = ", ".join(sorted(agents))
                 raise ConfigError(

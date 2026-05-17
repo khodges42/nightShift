@@ -22,7 +22,8 @@ NightShift now supports the full local patch workflow:
 - Planner lookup requests with `files-inspected.md` artifacts.
 - `repo_context` stage for `context-pack.md`.
 - Project context chart generation at `.nightshift/project-context-chart.md`.
-- `code_writer` stage that requires unified diff output.
+- `code_writer` stage for direct unified diff output.
+- `file_writer` stage for model-written complete file blocks with deterministic diff generation.
 - `patch_normalizer`, `patch_validator`, and `patch_apply` stages.
 - Patch dry-run and apply modes.
 - Test/static failure repair loops through existing retry routing.
@@ -143,7 +144,7 @@ pipeline:
       output: context-pack.md
 
     - id: implement
-      type: code_writer
+      type: file_writer
       agent: implementer
       output: proposed.patch
 
@@ -215,7 +216,7 @@ agents:
     system_prompt: agents/implementer.md
 ```
 
-NightShift passes prompt bundles to agents and persists stdout, stderr, exit code, duration, and prompt artifacts. Code writer agents should return unified diffs. On retries, patch artifacts are versioned by attempt, for example `repair-1.patch`, `normalized-1.patch`, and `patch-validation-1.md`.
+NightShift passes prompt bundles to agents and persists stdout, stderr, exit code, duration, and prompt artifacts. `code_writer` agents return unified diffs directly. `file_writer` agents return complete file blocks, and NightShift generates the unified diff deterministically. On retries, patch artifacts are versioned by attempt, for example `repair-1.patch`, `normalized-1.patch`, and `patch-validation-1.md`.
 
 Review agents should emit:
 
@@ -246,7 +247,7 @@ Command safety:
 
 Patch safety:
 
-- code changes are represented as unified diffs
+- code changes are represented as unified diffs, either supplied directly or generated from complete file blocks
 - patches are normalized and validated before apply
 - path traversal and forbidden paths are rejected
 - scoped paths, max files, and max changed lines are enforced

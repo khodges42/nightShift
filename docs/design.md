@@ -862,7 +862,7 @@ NightShift currently provides:
 * Dependency validation for missing references and simple cycles
 * Dependency-aware task selection and task blocking
 * Declarative YAML pipeline execution
-* Command, agent, agent-review, review, summarize, repo-context, code-writer, patch-normalizer, patch-validator, and patch-apply stage handling
+* Command, agent, agent-review, review, summarize, repo-context, code-writer, file-writer, patch-normalizer, patch-validator, and patch-apply stage handling
 * Retry redirection with a configured task retry limit
 * Command-backed agents
 * Ollama-backed local model agents through the local HTTP API
@@ -873,6 +873,7 @@ NightShift currently provides:
 * Project context chart generation
 * Context pack generation
 * Unified diff code-writing contract
+* Deterministic diff generation from model-supplied complete file blocks
 * Patch normalization, validation, dry-run, and apply modes
 * Per-attempt retry patch artifacts such as `repair-1.patch`, `normalized-1.patch`, and `patch-validation-1.md`
 * Test/static failure repair loops via bounded stage retries
@@ -1017,8 +1018,8 @@ The next important additions are:
 5. Better model backend support
    Expand OpenAI-compatible behavior, add request metadata artifacts, support response format hints, and document local server patterns. Machine-readable Ollama output now uses the HTTP API instead of the interactive `ollama run` terminal path; keep this non-terminal capture policy for future model backends where exact patch text matters.
 
-6. Deterministic diff generation
-   Reduce direct reliance on models emitting perfect unified diffs. Add a workflow where the model returns complete file contents or a structured edit description, then NightShift writes the unified diff deterministically from before/after file snapshots. Keep the existing unified-diff contract for advanced agents, but make deterministic diff generation the preferred path for smaller local models.
+6. Deterministic edit formats beyond full files
+   The `file_writer` stage now generates unified diffs from complete file blocks. Future work should add smaller structured edit descriptions for large files while preserving deterministic diff generation.
 
 7. Retry artifact versioning
    Continue improving per-attempt artifact preservation. Patch retries now preserve files such as `repair-1.patch`, `normalized-1.patch`, and `patch-validation-1.md`; future work should add richer latest-attempt indexes and dashboard navigation.

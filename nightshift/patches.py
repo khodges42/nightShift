@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import difflib
 from pathlib import Path
 import re
 import subprocess
@@ -33,6 +34,12 @@ class PatchApplyResult:
     mode: str
 
 
+@dataclass(frozen=True)
+class FileUpdate:
+    path: str
+    content: str
+
+
 def extract_unified_diff(text: str) -> str:
     fenced = re.search(r"```(?:diff|patch)?\s*\n(.*?)```", text, flags=re.DOTALL | re.IGNORECASE)
     candidate = fenced.group(1) if fenced else text
@@ -53,6 +60,53 @@ def normalize_patch_text(text: str) -> str:
     if "@@" not in patch:
         raise PipelineError("Patch error: unified diff has no hunks.")
     return patch
+
+
+def parse_file_updates(text: str) -> tuple[FileUpdate, ...]:
+    """Parse model-supplied complete file content blocks."""
+
+    updates: list[FileUpdate] = []
+    pattern = re.compile(
+        r"```(?:file|path)[:=](?P<path>[^\n`]+)\n(?P<content>.*?)```",
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    for match in pattern.finditer(text):
+        path = match.group("path").strip()
+        content = match.group("content")
+        if not path:
+            continue
+        updates.append(FileUpdate(path=path, content=content))
+    if not updates:
+        raise PipelineError(
+            "File writer error: no file blocks found. Expected fenced blocks like ```file:path.py."
+        )
+    return tuple(updates)
+
+
+def generate_patch_from_file_updates(
+    updates: tuple[FileUpdate, ...],
+    project_root: str | Path,
+    safety: SafetyConfig,
+    forbidden_paths: tuple[str, ...] = DEFAULT_FORBIDDEN_PATHS,
+) -> str:
+    root = resolve_project_root(project_root)
+    scoped_roots = validate_scoped_paths(root, safety.scoped_paths or (".",))
+    patch_parts: list[str] = []
+    seen: set[str] = set()
+    for update in updates:
+        normalized_path = _normalize_update_path(update.path)
+        if normalized_path in seen:
+            raise PipelineError(f"File writer error: duplicate file block `{normalized_path}`.")
+        seen.add(normalized_path)
+        _validate_patch_path(normalized_path, root, scoped_roots, forbidden_paths)
+        file_path = resolve_inside_root(root, normalized_path, f"file update '{normalized_path}'")
+        old_text = file_path.read_text(encoding="utf-8", errors="replace") if file_path.exists() else ""
+        if old_text == update.content:
+            continue
+        patch_parts.extend(_diff_for_file(normalized_path, old_text, update.content, file_path.exists()))
+    if not patch_parts:
+        raise PipelineError("File writer error: generated patch has no changes.")
+    return "\n".join(patch_parts).rstrip() + "\n"
 
 
 def validate_patch(
@@ -82,6 +136,7 @@ def validate_patch(
     for path_text in files:
         _validate_patch_path(path_text, root, scoped_roots, forbidden_paths)
     _validate_hunk_lines(patch)
+    _validate_hunk_counts(patch)
     _validate_file_states(patch, root)
     return PatchValidationResult(files=tuple(sorted(files)), changed_lines=changed_lines)
 
@@ -195,6 +250,74 @@ def _validate_hunk_lines(patch: str) -> None:
         )
 
 
+def _validate_hunk_counts(patch: str) -> None:
+    current: dict[str, int] | None = None
+
+    def flush(line_number: int) -> None:
+        if current is None:
+            return
+        old_expected = current["old_expected"]
+        new_expected = current["new_expected"]
+        old_actual = current["old_actual"]
+        new_actual = current["new_actual"]
+        hunk_line = current["line_number"]
+        if old_actual != old_expected:
+            raise PipelineError(
+                "Patch validation failed: hunk starting at line "
+                f"{hunk_line} old line count expected {old_expected}, got {old_actual} "
+                f"before line {line_number}."
+            )
+        if new_actual != new_expected:
+            raise PipelineError(
+                "Patch validation failed: hunk starting at line "
+                f"{hunk_line} new line count expected {new_expected}, got {new_actual} "
+                f"before line {line_number}."
+            )
+
+    for line_number, line in enumerate(patch.splitlines(), start=1):
+        if line.startswith("@@"):
+            flush(line_number)
+            current = _parse_hunk_header(line, line_number)
+            continue
+        if current is None:
+            continue
+        if line.startswith("diff --git "):
+            flush(line_number)
+            current = None
+            continue
+        if line.startswith("\\"):
+            continue
+        if line.startswith(" "):
+            current["old_actual"] += 1
+            current["new_actual"] += 1
+        elif line.startswith("-") and not line.startswith("---"):
+            current["old_actual"] += 1
+        elif line.startswith("+") and not line.startswith("+++"):
+            current["new_actual"] += 1
+    flush(len(patch.splitlines()) + 1)
+
+
+def _parse_hunk_header(line: str, line_number: int) -> dict[str, int]:
+    match = re.match(
+        r"^@@ -(?P<old_start>\d+)(?:,(?P<old_count>\d+))? "
+        r"\+(?P<new_start>\d+)(?:,(?P<new_count>\d+))? @@",
+        line,
+    )
+    if not match:
+        raise PipelineError(
+            f"Patch validation failed: malformed hunk header at line {line_number}."
+        )
+    old_count = int(match.group("old_count") or "1")
+    new_count = int(match.group("new_count") or "1")
+    return {
+        "line_number": line_number,
+        "old_expected": old_count,
+        "new_expected": new_count,
+        "old_actual": 0,
+        "new_actual": 0,
+    }
+
+
 def _validate_file_states(patch: str, root: Path) -> None:
     current_path: str | None = None
     current_is_new = False
@@ -265,6 +388,35 @@ def _validate_patch_path(
     raise PipelineError(
         f"Patch validation failed: path `{path_text}` is outside scoped paths: {scopes}."
     )
+
+
+def _normalize_update_path(path_text: str) -> str:
+    normalized = path_text.replace("\\", "/").strip()
+    if normalized.startswith(("a/", "b/")):
+        normalized = normalized[2:]
+    return normalized
+
+
+def _diff_for_file(path: str, old_text: str, new_text: str, exists: bool) -> list[str]:
+    old_lines = old_text.splitlines()
+    new_lines = new_text.splitlines()
+    from_file = f"a/{path}" if exists else "/dev/null"
+    to_file = f"b/{path}"
+    diff_lines = list(
+        difflib.unified_diff(
+            old_lines,
+            new_lines,
+            fromfile=from_file,
+            tofile=to_file,
+            lineterm="",
+        )
+    )
+    if not diff_lines:
+        return []
+    header = [f"diff --git a/{path} b/{path}"]
+    if not exists:
+        header.append("new file mode 100644")
+    return [*header, *diff_lines]
 
 
 def _strip_prefix(path_text: str) -> str:

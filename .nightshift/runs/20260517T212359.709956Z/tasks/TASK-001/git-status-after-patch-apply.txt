@@ -1,0 +1,16 @@
+# Git Status after-patch-apply
+
+Available: false
+Exit code: 128
+
+## stdout
+
+```text
+
+```
+
+## stderr
+
+```text
+fatal: not a git repository (or any of the parent directories): .git
+```

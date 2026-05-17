@@ -419,6 +419,46 @@ Acceptance Criteria:
             self.assertTrue((task_dir / "implementation-files-inspected.md").exists())
             self.assertIn("diff --git a/app.py b/app.py", (task_dir / "proposed.patch").read_text(encoding="utf-8"))
 
+    def test_file_writer_generates_patch_from_file_blocks(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            (root / "app.py").write_text("old\n", encoding="utf-8")
+            (root / "fake_writer.py").write_text(
+                "\n".join(
+                    [
+                        "print('```file:app.py')",
+                        "print('new')",
+                        "print('```')",
+                        "print('```file:tests/test_app.py')",
+                        "print('def test_app():')",
+                        "print('    assert True')",
+                        "print('```')",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            stages = (
+                StageConfig(id="write", type="file_writer", agent="writer"),
+                StageConfig(id="normalize", type="patch_normalizer"),
+                StageConfig(id="validate", type="patch_validator"),
+            )
+            config = make_config(root, stages)
+            config.agents["writer"] = AgentConfig(
+                id="writer",
+                backend="command",
+                command="python fake_writer.py",
+                system_prompt=Path("planner.md"),
+            )
+            runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+
+            result = runner.run_task(parse_tasks(TASK_MD)[0])
+
+            patch = root / ".nightshift" / "runs" / "test-run" / "tasks" / "TASK-001" / "proposed.patch"
+            self.assertEqual(result.status, "complete")
+            self.assertIn("diff --git a/app.py b/app.py", patch.read_text(encoding="utf-8"))
+            self.assertIn("diff --git a/tests/test_app.py b/tests/test_app.py", patch.read_text(encoding="utf-8"))
+
     def test_patch_validator_rejects_unsafe_patch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

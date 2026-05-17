@@ -10,8 +10,8 @@ You will run NightShift against a copy of the tiny Lisp example and use a local 
 
 1. Inspect task and repository context.
 2. Produce a plan.
-3. Generate a unified diff.
-4. Normalize and validate that patch.
+3. Generate complete file blocks.
+4. Let NightShift generate, normalize, and validate the patch.
 5. Dry-run the patch.
 6. Optionally apply the patch and run tests.
 
@@ -92,7 +92,16 @@ Then update the experiment labels:
 ```yaml
 experiment:
   label: quickstart-lisp-real-model
-  prompt_variant: ollama-qwen25-coder-14b-v1
+prompt_variant: ollama-qwen25-coder-14b-v1
+```
+
+Set the implementation stage to deterministic file-block mode:
+
+```yaml
+- id: implement
+  type: file_writer
+  agent: implementer
+  output: proposed.patch
 ```
 
 ## 3. Strengthen The Prompts
@@ -125,17 +134,19 @@ Do not write code.
 
 Use this for `agents/implementer.md`:
 
-```markdown
+````markdown
 You are the implementation agent for NightShift.
 
-Output only a unified diff.
-Do not wrap the patch in markdown fences.
-Do not include explanations before or after the patch.
-Use diff --git headers.
+Output only complete file content blocks.
+Use one fenced block per file with this exact opening form:
+```file:relative/path.py
+<complete file content>
+```
+Do not include explanations before or after the file blocks.
 Include tests when needed.
 Keep the change as small as possible.
 Only edit files needed for the task.
-```
+````
 
 Use this for `agents/reviewer.md`:
 
@@ -288,7 +299,7 @@ Agent exited with code 1
 
 Confirm Ollama is running at the configured `base_url` and the model appears in `ollama list`.
 
-If the model returns prose instead of a patch, tighten `agents/implementer.md`. The implementation stage requires a unified diff.
+If the model returns prose instead of file blocks, tighten `agents/implementer.md`. The `file_writer` stage requires complete file content blocks so NightShift can generate the unified diff.
 
 If patch validation fails, inspect:
 

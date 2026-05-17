@@ -61,3 +61,23 @@ Command stage options:
 - `shell`: defaults to true. Set false for argv-style execution.
 - `timeout_seconds`: per-stage timeout override.
 - `working_dir`: command working directory inside project root.
+
+Patch validator stage options:
+
+- `max_files`: max files changed.
+- `max_lines`: max changed lines.
+- `forbidden_paths`: paths the patch must not touch.
+- Unified diff hunk line prefixes and hunk line counts are validated before patch apply.
+
+Writer stages:
+
+- `code_writer`: agent returns a unified diff directly.
+- `file_writer`: agent returns complete file content blocks; NightShift generates the unified diff deterministically.
+
+`file_writer` blocks use this form:
+
+````markdown
+```file:relative/path.py
+<complete file content>
+```
+````

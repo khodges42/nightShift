@@ -4,7 +4,12 @@ import unittest
 
 from nightshift.config import SafetyConfig
 from nightshift.errors import PipelineError
-from nightshift.patches import normalize_patch_text, validate_patch
+from nightshift.patches import (
+    generate_patch_from_file_updates,
+    normalize_patch_text,
+    parse_file_updates,
+    validate_patch,
+)
 
 
 PATCH = """diff --git a/src/app.py b/src/app.py
@@ -95,6 +100,106 @@ new file mode 100644
 
             with self.assertRaisesRegex(PipelineError, "creates existing file"):
                 validate_patch(patch, root, safety)
+
+    def test_validate_patch_rejects_hunk_count_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "src").mkdir()
+            safety = SafetyConfig(
+                require_clean_worktree=False,
+                scoped_paths=("src",),
+                allowed_commands=(),
+                forbidden_commands=(),
+            )
+            patch = """diff --git a/src/app.py b/src/app.py
+--- a/src/app.py
++++ b/src/app.py
+@@ -1 +1,2 @@
+-old
++new
+"""
+
+            with self.assertRaisesRegex(PipelineError, "new line count expected 2, got 1"):
+                validate_patch(patch, root, safety)
+
+    def test_validate_patch_accepts_multiple_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "src").mkdir()
+            safety = SafetyConfig(
+                require_clean_worktree=False,
+                scoped_paths=("src",),
+                allowed_commands=(),
+                forbidden_commands=(),
+            )
+            patch = """diff --git a/src/app.py b/src/app.py
+--- a/src/app.py
++++ b/src/app.py
+@@ -1 +1 @@
+-old
++new
+diff --git a/src/test_app.py b/src/test_app.py
+--- a/src/test_app.py
++++ b/src/test_app.py
+@@ -1 +1 @@
+-old test
++new test
+"""
+
+            result = validate_patch(patch, root, safety)
+
+            self.assertEqual(result.files, ("src/app.py", "src/test_app.py"))
+
+    def test_file_updates_generate_unified_diff(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "src").mkdir()
+            (root / "src" / "app.py").write_text("old\n", encoding="utf-8")
+            safety = SafetyConfig(
+                require_clean_worktree=False,
+                scoped_paths=("src",),
+                allowed_commands=(),
+                forbidden_commands=(),
+            )
+            updates = parse_file_updates(
+                """```file:src/app.py
+new
+```
+```file:src/test_app.py
+test
+```
+"""
+            )
+
+            patch = generate_patch_from_file_updates(updates, root, safety)
+            result = validate_patch(patch, root, safety)
+
+            self.assertIn("diff --git a/src/app.py b/src/app.py", patch)
+            self.assertIn("diff --git a/src/test_app.py b/src/test_app.py", patch)
+            self.assertIn("new file mode 100644", patch)
+            self.assertEqual(result.files, ("src/app.py", "src/test_app.py"))
+
+    def test_file_updates_reject_duplicate_blocks(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            safety = SafetyConfig(
+                require_clean_worktree=False,
+                scoped_paths=(".",),
+                allowed_commands=(),
+                forbidden_commands=(),
+            )
+            updates = parse_file_updates(
+                """```file:app.py
+one
+```
+```file:app.py
+two
+```
+"""
+            )
+
+            with self.assertRaisesRegex(PipelineError, "duplicate file block"):
+                generate_patch_from_file_updates(updates, root, safety)
 
 
 if __name__ == "__main__":
