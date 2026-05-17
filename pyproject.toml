@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nightshift"
+version = "0.1.0"
+description = "Auditable local-first AI coding pipelines."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "GPL-3.0-only"
+authors = [
+  { name = "K455" }
+]
+
+[project.scripts]
+nightshift = "nightshift.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["nightshift*"]

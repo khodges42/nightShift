@@ -1,6 +1,6 @@
 # NIGHTSHIFT_CODEX.md
 
-You are Codex working on **NightShift**, a local-first AI coding pipeline runner.
+You are Codex working on **NightShift**, a local-first AI coding pipeline runner in python.
 
 This file is the implementation-driving context document. Treat it as the project brief, architectural guide, and task checklist.
 
