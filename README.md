@@ -1,6 +1,9 @@
 # NightShift
 
-![NightShift logo](docs/images/logo.png)
+<p align="center">
+  <img src="docs/images/logo.png" width="220">
+</p>
+
 
 Auditable local-first AI coding pipelines.
 

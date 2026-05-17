@@ -27,7 +27,7 @@ agents:
 
   implementer:
     backend: command
-    command: echo
+    command: python agents/fake_code_writer.py
     system_prompt: agents/implementer.md
 
   reviewer:
@@ -45,9 +45,24 @@ pipeline:
       output: plan.md
 
     - id: implement
-      type: agent
+      type: code_writer
       agent: implementer
-      output: implementation-log.md
+      output: proposed.patch
+
+    - id: normalize
+      type: patch_normalizer
+      output: normalized.patch
+
+    - id: validate_patch
+      type: patch_validator
+      output: patch-validation.md
+      max_files: 4
+      max_lines: 400
+
+    - id: apply_patch
+      type: patch_apply
+      mode: apply
+      output: patch-apply-output.txt
 
     - id: test
       type: command
@@ -56,6 +71,7 @@ pipeline:
       output: test-output.txt
       shell: true
       timeout_seconds: 60
+      on_fail: implement
 
     - id: review
       type: agent_review

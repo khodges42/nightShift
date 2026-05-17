@@ -1,4 +1,5 @@
 from pathlib import Path
+from dataclasses import replace
 import tempfile
 import unittest
 
@@ -403,6 +404,114 @@ Acceptance Criteria:
 
             self.assertEqual(result.status, "failed")
             self.assertIn("forbidden path", result.reason)
+
+    def test_patch_apply_stage_applies_patch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            (root / "app.py").write_text("old\n", encoding="utf-8")
+            (root / "fake_writer.py").write_text(
+                "\n".join(
+                    [
+                        "print('diff --git a/app.py b/app.py')",
+                        "print('--- a/app.py')",
+                        "print('+++ b/app.py')",
+                        "print('@@ -1 +1 @@')",
+                        "print('-old')",
+                        "print('+new')",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            stages = (
+                StageConfig(id="write", type="code_writer", agent="writer"),
+                StageConfig(id="normalize", type="patch_normalizer"),
+                StageConfig(id="validate", type="patch_validator"),
+                StageConfig(id="apply", type="patch_apply", mode="apply"),
+            )
+            config = make_config(root, stages)
+            config.agents["writer"] = AgentConfig(
+                id="writer",
+                backend="command",
+                command="python fake_writer.py",
+                system_prompt=Path("planner.md"),
+            )
+            runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+
+            result = runner.run_task(parse_tasks(TASK_MD)[0])
+
+            task_dir = root / ".nightshift" / "runs" / "test-run" / "tasks" / "TASK-001"
+            self.assertEqual(result.status, "complete")
+            self.assertEqual((root / "app.py").read_text(encoding="utf-8"), "new\n")
+            self.assertTrue((task_dir / "applied.patch").exists())
+            self.assertTrue((task_dir / "patch-apply-output.txt").exists())
+            self.assertTrue((task_dir / "git-status-before-patch-apply.txt").exists())
+            self.assertTrue((task_dir / "git-status-after-patch-apply.txt").exists())
+
+    def test_test_failure_repairs_with_second_patch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            (root / "app.py").write_text("old\n", encoding="utf-8")
+            (root / "fake_writer.py").write_text(
+                "\n".join(
+                    [
+                        "from pathlib import Path",
+                        "current = Path('app.py').read_text()",
+                        "old, new = ('bad', 'new') if current == 'bad\\n' else ('old', 'bad')",
+                        "print('diff --git a/app.py b/app.py')",
+                        "print('--- a/app.py')",
+                        "print('+++ b/app.py')",
+                        "print('@@ -1 +1 @@')",
+                        "print('-' + old)",
+                        "print('+' + new)",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            stages = (
+                StageConfig(id="write", type="code_writer", agent="writer"),
+                StageConfig(id="normalize", type="patch_normalizer"),
+                StageConfig(id="validate", type="patch_validator"),
+                StageConfig(id="apply", type="patch_apply", mode="apply"),
+                StageConfig(
+                    id="test",
+                    type="command",
+                    commands=('python -c "from pathlib import Path; raise SystemExit(0 if Path(\'app.py\').read_text() == \'new\\\\n\' else 1)"',),
+                    output="test-output.txt",
+                    on_fail="write",
+                ),
+            )
+            config = make_config(
+                root,
+                stages,
+                max_retries=1,
+            )
+            config = replace(
+                config,
+                safety=SafetyConfig(
+                require_clean_worktree=False,
+                scoped_paths=(".",),
+                allowed_commands=('python -c "from pathlib import Path; raise SystemExit(0 if Path(\'app.py\').read_text() == \'new\\\\n\' else 1)"',),
+                forbidden_commands=("rm -rf",),
+                ),
+            )
+            config.agents["writer"] = AgentConfig(
+                id="writer",
+                backend="command",
+                command="python fake_writer.py",
+                system_prompt=Path("planner.md"),
+            )
+            runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+
+            result = runner.run_task(parse_tasks(TASK_MD)[0])
+
+            task_dir = root / ".nightshift" / "runs" / "test-run" / "tasks" / "TASK-001"
+            self.assertEqual(result.status, "complete")
+            self.assertEqual(result.retry_count, 1)
+            self.assertEqual((root / "app.py").read_text(encoding="utf-8"), "new\n")
+            self.assertTrue((task_dir / "repair-1.patch").exists())
+            self.assertTrue((task_dir / "repair-summary-1.md").exists())
 
 
 def _write_common_files(root: Path) -> None:
