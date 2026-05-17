@@ -149,6 +149,8 @@ class AgentExecutor:
                 input=prompt,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=self.timeout_seconds,
             )
             duration = time.monotonic() - started
@@ -157,8 +159,8 @@ class AgentExecutor:
                 command=agent.command,
                 prompt=prompt,
                 exit_code=completed.returncode,
-                stdout=completed.stdout,
-                stderr=completed.stderr,
+                stdout=_coerce_output(completed.stdout),
+                stderr=_coerce_output(completed.stderr),
                 duration_seconds=duration,
             )
         except subprocess.TimeoutExpired as exc:
@@ -186,6 +188,8 @@ class AgentExecutor:
                 input=prompt,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=self.timeout_seconds,
             )
             duration = time.monotonic() - started
@@ -194,8 +198,8 @@ class AgentExecutor:
                 command=command,
                 prompt=prompt,
                 exit_code=completed.returncode,
-                stdout=completed.stdout,
-                stderr=completed.stderr,
+                stdout=_coerce_output(completed.stdout),
+                stderr=_coerce_output(completed.stderr),
                 duration_seconds=duration,
             )
         except FileNotFoundError as exc:
@@ -323,6 +327,9 @@ def parse_review_output(output: str) -> tuple[StageStatus, str, str | None, str 
 
 
 def format_agent_invocation(stage_id: str, invocation: AgentInvocation) -> str:
+    stdout = _coerce_output(invocation.stdout)
+    stderr = _coerce_output(invocation.stderr)
+    prompt = _coerce_output(invocation.prompt)
     return "\n".join(
         [
             f"# Agent Output: {stage_id}",
@@ -336,19 +343,19 @@ def format_agent_invocation(stage_id: str, invocation: AgentInvocation) -> str:
             "## stdout",
             "",
             "```text",
-            invocation.stdout.rstrip(),
+            stdout.rstrip(),
             "```",
             "",
             "## stderr",
             "",
             "```text",
-            invocation.stderr.rstrip(),
+            stderr.rstrip(),
             "```",
             "",
             "## Prompt",
             "",
             "```markdown",
-            invocation.prompt.rstrip(),
+            prompt.rstrip(),
             "```",
             "",
         ]

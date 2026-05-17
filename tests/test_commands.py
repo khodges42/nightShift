@@ -4,6 +4,7 @@ import unittest
 
 from nightshift.artifacts import ArtifactStore
 from nightshift.commands import CommandExecutor
+from nightshift.commands import CommandRun, format_command_runs
 from nightshift.config import SafetyConfig, StageConfig
 from nightshift.errors import CommandError
 
@@ -149,6 +150,23 @@ class CommandExecutorTests(unittest.TestCase):
             self.assertEqual(result.status, "pass")
             output = (root / result.output_path).read_text(encoding="utf-8")
             self.assertIn("work", output)
+
+    def test_command_artifact_format_tolerates_missing_streams(self) -> None:
+        output = format_command_runs(
+            "test",
+            [
+                CommandRun(
+                    command="cmd",
+                    exit_code=0,
+                    stdout=None,  # type: ignore[arg-type]
+                    stderr=None,  # type: ignore[arg-type]
+                    duration_seconds=0.1,
+                )
+            ],
+        )
+
+        self.assertIn("Command: `cmd`", output)
+        self.assertIn("### stderr", output)
 
 
 if __name__ == "__main__":

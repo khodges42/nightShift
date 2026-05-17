@@ -125,6 +125,8 @@ class CommandExecutor:
                 shell=shell,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=timeout,
                 env=env,
             )
@@ -132,8 +134,8 @@ class CommandExecutor:
             return CommandRun(
                 command=normalized,
                 exit_code=completed.returncode,
-                stdout=completed.stdout,
-                stderr=completed.stderr,
+                stdout=_coerce_output(completed.stdout),
+                stderr=_coerce_output(completed.stderr),
                 duration_seconds=duration,
             )
         except subprocess.TimeoutExpired as exc:
@@ -151,6 +153,8 @@ class CommandExecutor:
 def format_command_runs(stage_id: str, runs: list[CommandRun]) -> str:
     lines = [f"# Command Output: {stage_id}", ""]
     for index, run in enumerate(runs, start=1):
+        stdout = _coerce_output(run.stdout)
+        stderr = _coerce_output(run.stderr)
         lines.extend(
             [
                 f"## Command {index}",
@@ -163,13 +167,13 @@ def format_command_runs(stage_id: str, runs: list[CommandRun]) -> str:
                 "### stdout",
                 "",
                 "```text",
-                run.stdout.rstrip(),
+                stdout.rstrip(),
                 "```",
                 "",
                 "### stderr",
                 "",
                 "```text",
-                run.stderr.rstrip(),
+                stderr.rstrip(),
                 "```",
                 "",
             ]

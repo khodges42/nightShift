@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from nightshift.agents import AgentExecutor, build_prompt_bundle, parse_review_output
+from nightshift.agents import AgentInvocation, format_agent_invocation
 from nightshift.artifacts import ArtifactStore
 from nightshift.config import AgentConfig, StageConfig
 from nightshift.tasks import parse_tasks
@@ -130,6 +131,22 @@ class AgentExecutorTests(unittest.TestCase):
             self.assertEqual(run.call_args.args[0], ["ollama", "run", "tiny-model"])
             output = (root / result.output_path).read_text(encoding="utf-8")
             self.assertIn("ollama run tiny-model", output)
+
+    def test_agent_artifact_format_tolerates_missing_streams(self) -> None:
+        invocation = AgentInvocation(
+            agent_id="planner",
+            command="ollama run model",
+            prompt="prompt",
+            exit_code=0,
+            stdout=None,  # type: ignore[arg-type]
+            stderr=None,  # type: ignore[arg-type]
+            duration_seconds=0.1,
+        )
+
+        output = format_agent_invocation("plan", invocation)
+
+        self.assertIn("Agent: `planner`", output)
+        self.assertIn("## stderr", output)
 
 
 if __name__ == "__main__":

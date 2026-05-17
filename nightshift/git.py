@@ -25,11 +25,18 @@ def run_git(project_root: Path, args: list[str], timeout_seconds: int = 15) -> G
             cwd=project_root,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout_seconds,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return GitCommandResult(False, -1, "", str(exc))
-    return GitCommandResult(completed.returncode == 0, completed.returncode, completed.stdout, completed.stderr)
+    return GitCommandResult(
+        completed.returncode == 0,
+        completed.returncode,
+        completed.stdout or "",
+        completed.stderr or "",
+    )
 
 
 def get_git_status(project_root: Path) -> GitCommandResult:

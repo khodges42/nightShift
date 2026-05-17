@@ -213,6 +213,8 @@ def collect_modified_files(project_root: Path) -> list[str]:
             shell=True,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=10,
         )
     except (OSError, subprocess.TimeoutExpired):
