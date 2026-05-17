@@ -31,14 +31,16 @@ function Add-UserPath {
     $current = [Environment]::GetEnvironmentVariable("Path", "User")
     $parts = @()
     if (-not [string]::IsNullOrWhiteSpace($current)) {
-        $parts = $current -split ";" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        $parts = @($current -split ";" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     }
-    if ($parts -contains $Directory) {
+    $normalizedParts = @($parts | ForEach-Object { $_.TrimEnd("\") })
+    $normalizedDirectory = $Directory.TrimEnd("\")
+    if ($normalizedParts -contains $normalizedDirectory) {
         return
     }
     $newPath = if ($parts.Count -gt 0) { ($parts + $Directory) -join ";" } else { $Directory }
     [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-    $env:Path = ($env:Path + ";" + $Directory)
+    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
 }
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -57,12 +59,19 @@ Write-Host "Python: $pythonVersion"
 Write-Host "Installing NightShift in editable mode..."
 python -m pip install -e .
 
-$scriptsDir = python -c "import sysconfig; print(sysconfig.get_path('scripts'))"
+$scriptsDir = python -c "import sysconfig; print(sysconfig.get_path('scripts', scheme='nt_user') or sysconfig.get_path('scripts'))"
 $pathParts = $env:Path -split ";" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 if ($pathParts -notcontains $scriptsDir) {
     if (Ask-YesNo "Add Python scripts directory to your user PATH so 'nightshift' works in new terminals? $scriptsDir") {
         Add-UserPath $scriptsDir
-        Write-Host "Added to user PATH: $scriptsDir"
+        $persistedUserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+        if (($persistedUserPath -split ";" | ForEach-Object { $_.TrimEnd("\") }) -contains $scriptsDir.TrimEnd("\")) {
+            Write-Host "Added to user PATH: $scriptsDir"
+        } else {
+            Write-Host "Tried to add PATH entry, but it was not visible in the persisted user PATH."
+            Write-Host "Manual command:"
+            Write-Host "[Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path','User') + ';$scriptsDir', 'User')"
+        }
     } else {
         Write-Host "Skipped PATH update. You can still run: python -m nightshift.cli"
     }

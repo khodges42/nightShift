@@ -53,7 +53,7 @@ echo "Python: $($PYTHON -c 'import sys; print(f"{sys.version_info.major}.{sys.ve
 echo "Installing NightShift in editable mode..."
 $PYTHON -m pip install -e .
 
-scripts_dir=$($PYTHON -c 'import sysconfig; print(sysconfig.get_path("scripts"))')
+scripts_dir=$($PYTHON -c 'import sysconfig, os; print(sysconfig.get_path("scripts", scheme="posix_user") or sysconfig.get_path("scripts"))')
 case ":$PATH:" in
   *":$scripts_dir:"*)
     echo "PATH already includes Python scripts directory."
