@@ -37,6 +37,7 @@ class ArtifactStore:
         self.run_dir = self._artifact_path("runs", self.run_id)
         self.tasks_dir = self.run_dir / "tasks"
         self.project_context_path = self.artifact_root / "project-context.md"
+        self.project_context_chart_path = self.artifact_root / "project-context-chart.md"
         self.run_summary_path = self.run_dir / "run-summary.md"
         self.config_snapshot_path = self.run_dir / "config.snapshot.yaml"
         self.run_log_path = self.run_dir / "run.log"

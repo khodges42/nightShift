@@ -206,6 +206,46 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(test_stage.timeout_seconds, 30)
             self.assertEqual(test_stage.working_dir, Path("."))
 
+    def test_patch_validator_stage_options_load(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            init_project(root)
+            config_path = root / "nightshift.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace(
+                    "    - id: summarize",
+                    "    - id: validate_patch\n      type: patch_validator\n      max_files: 2\n      max_lines: 100\n      forbidden_paths:\n        - secrets\n\n    - id: summarize",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+
+            config = load_config(config_path)
+            patch_stage = next(stage for stage in config.pipeline.stages if stage.id == "validate_patch")
+
+            self.assertEqual(patch_stage.max_files, 2)
+            self.assertEqual(patch_stage.max_lines, 100)
+            self.assertEqual(patch_stage.forbidden_paths, ("secrets",))
+
+    def test_patch_apply_mode_loads(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            init_project(root)
+            config_path = root / "nightshift.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace(
+                    "    - id: summarize",
+                    "    - id: apply_patch\n      type: patch_apply\n      mode: dry_run\n\n    - id: summarize",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+
+            config = load_config(config_path)
+            apply_stage = next(stage for stage in config.pipeline.stages if stage.id == "apply_patch")
+
+            self.assertEqual(apply_stage.mode, "dry_run")
+
     def test_agent_temperature_loads(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -223,19 +223,20 @@ def extract_agent_stdout(artifact_text: str) -> str:
     for index, line in enumerate(lines):
         if line.strip() != "## stdout":
             continue
-        start = None
-        for cursor in range(index + 1, len(lines)):
-            if lines[cursor].strip().startswith("```"):
-                start = cursor + 1
-                break
-        if start is None:
-            return ""
-        end = len(lines)
-        for cursor in range(start, len(lines)):
-            if lines[cursor].strip().startswith("```"):
-                end = cursor
-                break
-        return "\n".join(lines[start:end])
+        end = next(
+            (cursor for cursor in range(index + 1, len(lines)) if lines[cursor].strip() == "## stderr"),
+            len(lines),
+        )
+        section = lines[index + 1:end]
+        while section and not section[0].strip():
+            section = section[1:]
+        while section and not section[-1].strip():
+            section = section[:-1]
+        if section and section[0].strip().startswith("```"):
+            section = section[1:]
+        if section and section[-1].strip() == "```":
+            section = section[:-1]
+        return "\n".join(section)
     return artifact_text
 
 

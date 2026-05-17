@@ -983,6 +983,8 @@ Current limitations:
 
 The next major update should improve operational visibility while preserving the current artifact-first model.
 
+Phase work is tracked in this design document by updating the relevant phase checklist and adding concise implementation notes only when a decision needs durable context. The old `docs/devlog/` phase files have been retired.
+
 ## Phase 23: Improved Logging and Live Visibility
 
 NightShift should make active runs easier to observe from both the CLI and the web dashboard.
@@ -1051,36 +1053,36 @@ Notes:
 
 ## Phase 28: Project Context Chart MVP
 
-- [ ] Generate `.nightshift/project-context-chart.md`.
-- [ ] Include files, responsibilities, functions/classes, entry points, tests.
-- [ ] Use simple regex/parser MVP.
-- [ ] Update chart during planning.
-- [ ] Store anchors/line numbers/search terms.
+- [x] Generate `.nightshift/project-context-chart.md`.
+- [x] Include files, responsibilities, functions/classes, entry points, tests.
+- [x] Use simple regex/parser MVP.
+- [x] Update chart during planning.
+- [x] Store anchors/line numbers/search terms.
 
 ## Phase 29: Code Writer Stage
 
-- [ ] Add `code_writer` stage type.
-- [ ] Feed it task + context pack.
-- [ ] Require unified diff output.
-- [ ] Save `proposed.patch`.
-- [ ] Save `implementation-summary.md`.
+- [x] Add `code_writer` stage type.
+- [x] Feed it task + context pack.
+- [x] Require unified diff output.
+- [x] Save `proposed.patch`.
+- [x] Save `implementation-summary.md`.
 
 ## Phase 30: Patch Normalization
 
-- [ ] Add `patch_normalizer` stage.
-- [ ] Support low-temperature formatter model.
-- [ ] Convert messy model output to valid unified diff.
-- [ ] Reject missing/ambiguous edits.
-- [ ] Save `normalized.patch`.
+- [x] Add `patch_normalizer` stage.
+- [x] Support low-temperature formatter model.
+- [x] Convert messy model output to valid unified diff.
+- [x] Reject missing/ambiguous edits.
+- [x] Save `normalized.patch`.
 
 ## Phase 31: Patch Validation
 
-- [ ] Parse unified diffs.
-- [ ] Reject malformed patches.
-- [ ] Enforce scoped paths.
-- [ ] Reject path traversal.
-- [ ] Enforce max files/max lines changed.
-- [ ] Reject forbidden files.
+- [x] Parse unified diffs.
+- [x] Reject malformed patches.
+- [x] Enforce scoped paths.
+- [x] Reject path traversal.
+- [x] Enforce max files/max lines changed.
+- [x] Reject forbidden files.
 
 ## Phase 32: Patch Apply / Dry Run
 

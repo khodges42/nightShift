@@ -409,6 +409,22 @@ def _extract_openai_content(raw: str) -> str:
 
 
 def output_contract_for(stage: StageConfig) -> str:
+    if stage.type == "code_writer":
+        return "\n".join(
+            [
+                "Return a unified diff only, suitable for saving as proposed.patch.",
+                "Do not include prose outside the patch.",
+                "Use diff --git headers and hunk headers.",
+            ]
+        )
+    if stage.type == "patch_normalizer":
+        return "\n".join(
+            [
+                "Convert the supplied patch-like content to one valid unified diff.",
+                "Return only the normalized patch.",
+                "If the edit is missing or ambiguous, say that no valid unified diff can be produced.",
+            ]
+        )
     if stage.type in {"agent_review", "review"}:
         return "\n".join(
             [

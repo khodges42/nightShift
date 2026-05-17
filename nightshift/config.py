@@ -59,6 +59,10 @@ class StageConfig:
     shell: bool = True
     timeout_seconds: int | None = None
     working_dir: Path | None = None
+    max_files: int | None = None
+    max_lines: int | None = None
+    forbidden_paths: tuple[str, ...] = ()
+    mode: str | None = None
 
 
 @dataclass(frozen=True)
@@ -86,7 +90,14 @@ class NightShiftConfig:
 
 AGENT_STAGE_TYPES = {"agent", "agent_review", "review"}
 COMMAND_STAGE_TYPES = {"command"}
-SUPPORTED_STAGE_TYPES = AGENT_STAGE_TYPES | COMMAND_STAGE_TYPES | {"repo_context", "summarize"}
+SUPPORTED_STAGE_TYPES = AGENT_STAGE_TYPES | COMMAND_STAGE_TYPES | {
+    "code_writer",
+    "patch_normalizer",
+    "patch_apply",
+    "patch_validator",
+    "repo_context",
+    "summarize",
+}
 
 
 def load_config(path: str | Path = "nightshift.yaml") -> NightShiftConfig:
@@ -282,6 +293,17 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
         if timeout_seconds is not None and timeout_seconds <= 0:
             raise ConfigError(f"Config error: {stage_context}.timeout_seconds must be greater than zero.")
         working_dir_raw = _optional_string(stage_raw.get("working_dir"), f"{stage_context}.working_dir")
+        max_files = _optional_int_or_none(stage_raw.get("max_files"), f"{stage_context}.max_files")
+        max_lines = _optional_int_or_none(stage_raw.get("max_lines"), f"{stage_context}.max_lines")
+        if max_files is not None and max_files <= 0:
+            raise ConfigError(f"Config error: {stage_context}.max_files must be greater than zero.")
+        if max_lines is not None and max_lines <= 0:
+            raise ConfigError(f"Config error: {stage_context}.max_lines must be greater than zero.")
+        mode = _optional_string(stage_raw.get("mode"), f"{stage_context}.mode")
+        if stage_type == "patch_apply" and mode not in {None, "dry_run", "apply"}:
+            raise ConfigError(
+                f"Config error: {stage_context}.mode must be 'dry_run' or 'apply'."
+            )
 
         if stage_type in AGENT_STAGE_TYPES:
             if agent is None:
@@ -292,6 +314,21 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
                     f"Config error: pipeline stage '{stage_id}' references unknown agent "
                     f"'{agent}'. Defined agents: {defined}."
                 )
+        if stage_type == "code_writer":
+            if agent is None:
+                raise ConfigError(f"Config error: code_writer stage '{stage_id}' must reference an agent.")
+            if agent not in agents:
+                defined = ", ".join(sorted(agents))
+                raise ConfigError(
+                    f"Config error: pipeline stage '{stage_id}' references unknown agent "
+                    f"'{agent}'. Defined agents: {defined}."
+                )
+        if stage_type == "patch_normalizer" and agent is not None and agent not in agents:
+            defined = ", ".join(sorted(agents))
+            raise ConfigError(
+                f"Config error: pipeline stage '{stage_id}' references unknown agent "
+                f"'{agent}'. Defined agents: {defined}."
+            )
 
         if stage_type in COMMAND_STAGE_TYPES and not commands:
             raise ConfigError(f"Config error: command stage '{stage_id}' must define commands.")
@@ -311,6 +348,13 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
                 shell=_optional_bool(stage_raw.get("shell", True), f"{stage_context}.shell"),
                 timeout_seconds=timeout_seconds,
                 working_dir=Path(working_dir_raw) if working_dir_raw else None,
+                max_files=max_files,
+                max_lines=max_lines,
+                forbidden_paths=_string_tuple(
+                    stage_raw.get("forbidden_paths", []),
+                    f"{stage_context}.forbidden_paths",
+                ),
+                mode=mode,
             )
         )
 

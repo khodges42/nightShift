@@ -14,6 +14,18 @@ from .context import ContextManager
 from .errors import PipelineError
 from .errors import NightShiftError
 from .git import ensure_clean_worktree, write_diff_artifact, write_git_artifacts
+from .patches import (
+    DEFAULT_FORBIDDEN_PATHS,
+    DEFAULT_MAX_CHANGED_LINES,
+    DEFAULT_MAX_FILES,
+    apply_patch_with_git,
+    extract_unified_diff,
+    format_patch_apply_result,
+    format_validation_result,
+    normalize_patch_text,
+    validate_patch,
+)
+from .project_chart import build_project_context_chart
 from .reports import ReportGenerator
 from .repo_tools import RepoTools, extract_agent_stdout, parse_lookup_requests
 from .runlog import RunLogger
@@ -102,6 +114,7 @@ class PipelineRunner:
         )
         self.artifacts.write_run_metadata(format_run_metadata(self.config))
         self.artifacts.write_task_snapshot(task)
+        self._write_project_context_chart()
         write_git_artifacts(self.artifacts, task.id, "before")
         self.context.ensure_project_context()
         self.context.create_task_context(task)
@@ -128,7 +141,7 @@ class PipelineRunner:
                 retry_count=retry_count,
             )
             try:
-                result = self._run_stage(stage, task, previous_outputs, retry_notes)
+                result = self._run_stage(stage, task, previous_outputs, retry_notes, retry_count)
             except NightShiftError as exc:
                 result = StageResult(
                     stage_id=stage.id,
@@ -325,6 +338,7 @@ class PipelineRunner:
         task: Task,
         previous_outputs: dict[str, str],
         retry_notes: list[str],
+        retry_count: int = 0,
     ) -> StageResult:
         if stage.type in {"agent", "agent_review", "review"}:
             context = self.context.read_context(task, retry_notes)
@@ -351,6 +365,14 @@ class PipelineRunner:
             return result
         if stage.type in COMMAND_STAGE_TYPES:
             return self.command_executor.run_stage(stage, task.id)
+        if stage.type == "code_writer":
+            return self._run_code_writer_stage(stage, task, previous_outputs, retry_notes, retry_count)
+        if stage.type == "patch_normalizer":
+            return self._run_patch_normalizer_stage(stage, task, previous_outputs, retry_notes)
+        if stage.type == "patch_validator":
+            return self._run_patch_validator_stage(stage, task, previous_outputs)
+        if stage.type == "patch_apply":
+            return self._run_patch_apply_stage(stage, task, previous_outputs)
         if stage.type == "repo_context":
             output_path = self.artifacts.write_stage_output(
                 task.id,
@@ -383,6 +405,224 @@ class PipelineRunner:
                 output_path=str(output_path.relative_to(self.config.project.root)),
             )
         raise PipelineError(f"Pipeline error: unsupported stage type '{stage.type}'.")
+
+    def _write_project_context_chart(self) -> Path:
+        chart = build_project_context_chart(self.config.project.root, self.config.safety)
+        self.artifacts.initialize_run()
+        self.artifacts.project_context_chart_path.write_text(chart, encoding="utf-8")
+        self.logger.event(
+            "artifact.write",
+            "Wrote project context chart",
+            artifact_path=self.artifacts.project_context_chart_path.relative_to(self.config.project.root),
+        )
+        return self.artifacts.project_context_chart_path
+
+    def _run_code_writer_stage(
+        self,
+        stage: StageConfig,
+        task: Task,
+        previous_outputs: dict[str, str],
+        retry_notes: list[str],
+        retry_count: int = 0,
+    ) -> StageResult:
+        if stage.agent is None:
+            raise PipelineError(f"Pipeline error: code_writer stage '{stage.id}' must reference an agent.")
+        enriched_outputs = dict(previous_outputs)
+        context_pack_path = self._latest_task_artifact(task.id, "context-pack.md")
+        if context_pack_path is not None:
+            enriched_outputs["context-pack.md"] = context_pack_path.read_text(encoding="utf-8", errors="replace")
+        chart_path = self.artifacts.project_context_chart_path
+        if chart_path.exists():
+            enriched_outputs["project-context-chart.md"] = chart_path.read_text(encoding="utf-8", errors="replace")
+        result = self.agent_executor.run_stage(
+            stage,
+            task,
+            enriched_outputs,
+            retry_notes,
+            project_context=self.context.read_context(task, retry_notes).project_context,
+            task_context=self.context.read_context(task, retry_notes).task_context,
+            retry_context=self.context.read_context(task, retry_notes).retry_context,
+        )
+        raw_output = self._read_output(result.output_path)
+        stdout = extract_agent_stdout(raw_output)
+        try:
+            patch = extract_unified_diff(stdout)
+        except PipelineError as exc:
+            self.artifacts.write_stage_output(
+                task.id,
+                "implementation-summary.md",
+                f"# Implementation Summary\n\nStatus: fail\nReason: {exc}\n",
+            )
+            return StageResult(stage.id, "fail", str(exc), output_path=result.output_path)
+        patch_filename = stage.output or ("proposed.patch" if retry_count == 0 else f"repair-{retry_count}.patch")
+        summary_filename = "implementation-summary.md" if retry_count == 0 else f"repair-summary-{retry_count}.md"
+        proposed_path = self.artifacts.write_stage_output(task.id, patch_filename, patch)
+        summary_path = self.artifacts.write_stage_output(
+            task.id,
+            summary_filename,
+            format_implementation_summary(
+                stage.id,
+                proposed_path.relative_to(self.config.project.root).as_posix(),
+                retry_count=retry_count,
+                retry_notes=retry_notes,
+            ),
+        )
+        self.logger.event(
+            "artifact.write",
+            "Wrote proposed patch",
+            stage_id=stage.id,
+            task_id=task.id,
+            artifact_path=proposed_path.relative_to(self.config.project.root),
+        )
+        return StageResult(
+            stage.id,
+            "pass",
+            "Proposed patch written.",
+            output_path=str(proposed_path.relative_to(self.config.project.root)),
+            context_update=f"Implementation summary: {summary_path.relative_to(self.config.project.root).as_posix()}",
+        )
+
+    def _run_patch_normalizer_stage(
+        self,
+        stage: StageConfig,
+        task: Task,
+        previous_outputs: dict[str, str],
+        retry_notes: list[str],
+    ) -> StageResult:
+        source = _latest_patch_like_output(previous_outputs)
+        if stage.agent is not None:
+            result = self.agent_executor.run_stage(
+                stage,
+                task,
+                {"patch_input": source, **previous_outputs},
+                retry_notes,
+                project_context=self.context.read_context(task, retry_notes).project_context,
+                task_context=self.context.read_context(task, retry_notes).task_context,
+                retry_context=self.context.read_context(task, retry_notes).retry_context,
+            )
+            source = extract_agent_stdout(self._read_output(result.output_path))
+        try:
+            patch = normalize_patch_text(source)
+        except PipelineError as exc:
+            return StageResult(stage.id, "fail", str(exc))
+        output_path = self.artifacts.write_stage_output(task.id, stage.output or "normalized.patch", patch)
+        self.logger.event(
+            "artifact.write",
+            "Wrote normalized patch",
+            stage_id=stage.id,
+            task_id=task.id,
+            artifact_path=output_path.relative_to(self.config.project.root),
+        )
+        return StageResult(
+            stage.id,
+            "pass",
+            "Normalized patch written.",
+            output_path=str(output_path.relative_to(self.config.project.root)),
+        )
+
+    def _run_patch_validator_stage(
+        self,
+        stage: StageConfig,
+        task: Task,
+        previous_outputs: dict[str, str],
+    ) -> StageResult:
+        source = _latest_patch_like_output(previous_outputs)
+        try:
+            patch = normalize_patch_text(source)
+            result = validate_patch(
+                patch,
+                self.config.project.root,
+                self.config.safety,
+                max_files=stage.max_files or DEFAULT_MAX_FILES,
+                max_changed_lines=stage.max_lines or DEFAULT_MAX_CHANGED_LINES,
+                forbidden_paths=stage.forbidden_paths or DEFAULT_FORBIDDEN_PATHS,
+            )
+        except PipelineError as exc:
+            output_path = self.artifacts.write_stage_output(
+                task.id,
+                stage.output or "patch-validation.md",
+                f"# Patch Validation\n\nStatus: fail\nReason: {exc}\n",
+            )
+            return StageResult(
+                stage.id,
+                "fail",
+                str(exc),
+                output_path=str(output_path.relative_to(self.config.project.root)),
+            )
+        output_path = self.artifacts.write_stage_output(
+            task.id,
+            stage.output or "patch-validation.md",
+            format_validation_result(result),
+        )
+        return StageResult(
+            stage.id,
+            "pass",
+            "Patch validation passed.",
+            output_path=str(output_path.relative_to(self.config.project.root)),
+        )
+
+    def _run_patch_apply_stage(
+        self,
+        stage: StageConfig,
+        task: Task,
+        previous_outputs: dict[str, str],
+    ) -> StageResult:
+        source = _latest_patch_like_output(previous_outputs)
+        try:
+            patch = normalize_patch_text(source)
+            validate_patch(
+                patch,
+                self.config.project.root,
+                self.config.safety,
+                max_files=stage.max_files or DEFAULT_MAX_FILES,
+                max_changed_lines=stage.max_lines or DEFAULT_MAX_CHANGED_LINES,
+                forbidden_paths=stage.forbidden_paths or DEFAULT_FORBIDDEN_PATHS,
+            )
+        except PipelineError as exc:
+            output_path = self.artifacts.write_stage_output(
+                task.id,
+                stage.output or "patch-apply-output.txt",
+                f"# Patch Apply\n\nStatus: fail\nReason: {exc}\n",
+            )
+            return StageResult(
+                stage.id,
+                "fail",
+                str(exc),
+                output_path=str(output_path.relative_to(self.config.project.root)),
+            )
+
+        applied_path = self.artifacts.write_stage_output(task.id, "applied.patch", patch)
+        write_git_artifacts(self.artifacts, task.id, "before-patch-apply")
+        mode = stage.mode or "dry_run"
+        apply_result = apply_patch_with_git(applied_path, self.config.project.root, mode=mode)
+        write_git_artifacts(self.artifacts, task.id, "after-patch-apply")
+        output_path = self.artifacts.write_stage_output(
+            task.id,
+            stage.output or "patch-apply-output.txt",
+            format_patch_apply_result(
+                apply_result,
+                applied_path.relative_to(self.config.project.root).as_posix(),
+            ),
+        )
+        if apply_result.status != "pass":
+            return StageResult(
+                stage.id,
+                "fail",
+                f"Patch apply failed with code {apply_result.exit_code}.",
+                output_path=str(output_path.relative_to(self.config.project.root)),
+                context_update=apply_result.stderr.strip() or apply_result.stdout.strip(),
+            )
+        reason = "Patch dry run passed." if mode == "dry_run" else "Patch applied."
+        return StageResult(
+            stage.id,
+            "pass",
+            reason,
+            output_path=str(output_path.relative_to(self.config.project.root)),
+        )
+
+    def _latest_task_artifact(self, task_id: str, filename: str) -> Path | None:
+        path = self.artifacts.create_task_dir(task_id).directory / filename
+        return path if path.exists() else None
 
     def _maybe_rerun_agent_with_repo_lookup(
         self,
@@ -526,6 +766,39 @@ def format_task_completion(task: Task, status: str, changed: bool) -> str:
             "",
         ]
     )
+
+
+def format_implementation_summary(
+    stage_id: str,
+    patch_path: str,
+    retry_count: int = 0,
+    retry_notes: list[str] | None = None,
+) -> str:
+    notes = retry_notes or []
+    lines = [
+        "# Implementation Summary",
+        "",
+        f"Stage: `{stage_id}`",
+        "Status: pass",
+        f"Repair attempt: {retry_count}",
+        f"Patch: `{patch_path}`",
+        "",
+        "## Retry Feedback",
+        "",
+    ]
+    lines.extend(f"- {note}" for note in notes[-5:]) if notes else lines.append("- None")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _latest_patch_like_output(previous_outputs: dict[str, str]) -> str:
+    for name in ("normalized.patch", "applied.patch", "proposed.patch", "patch_input"):
+        if name in previous_outputs and previous_outputs[name].strip():
+            return previous_outputs[name]
+    for stage_id, content in reversed(list(previous_outputs.items())):
+        if stage_id.endswith(".patch") or "diff --git " in content or "\n--- " in content:
+            return content
+    raise PipelineError("Patch error: no previous patch output found.")
 
 
 def format_aggregate_run_summary(results: list[PipelineResult], status: str, reason: str) -> str:
