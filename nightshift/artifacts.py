@@ -154,7 +154,7 @@ def default_run_id(now: datetime | None = None) -> str:
     """Return a filesystem-friendly UTC run id."""
 
     value = now or datetime.now(timezone.utc)
-    return value.strftime("%Y%m%dT%H%M%SZ")
+    return value.strftime("%Y%m%dT%H%M%S.%fZ")
 
 
 def _safe_artifact_segment(value: str, context: str) -> str:

@@ -2,7 +2,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from nightshift.artifacts import ArtifactStore
+from nightshift.artifacts import ArtifactStore, default_run_id
 from nightshift.errors import ArtifactError
 from nightshift.init import init_project
 from nightshift.tasks import parse_task_file
@@ -61,6 +61,11 @@ class ArtifactStoreTests(unittest.TestCase):
             store = ArtifactStore(root, ".nightshift", run_id="safe-run")
             with self.assertRaisesRegex(ArtifactError, "task id contains unsafe"):
                 store.create_task_dir("../TASK-001")
+
+    def test_default_run_id_has_subsecond_precision(self) -> None:
+        run_id = default_run_id()
+
+        self.assertRegex(run_id, r"^\d{8}T\d{6}\.\d{6}Z$")
 
 
 if __name__ == "__main__":

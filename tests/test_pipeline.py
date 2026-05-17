@@ -240,10 +240,13 @@ Acceptance Criteria:
             config = make_config(root, stages)
             runner = PipelineRunner(config, artifacts)
             task = parse_tasks(TASK_MD)[0]
+            artifacts.initialize_run()
+            artifacts.run_log_path.write_text("old run log\n", encoding="utf-8")
 
             runner.run_task(task)
 
             log = (root / ".nightshift" / "runs" / "test-run" / "run.log").read_text(encoding="utf-8")
+            self.assertNotIn("old run log", log)
             self.assertIn("task.start", log)
             self.assertIn("stage.start", log)
             self.assertIn("agent.finish", log)

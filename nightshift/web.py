@@ -50,13 +50,18 @@ def read_artifact(run_path: Path, relative_path: str) -> str:
 
 def render_dashboard(artifact_dir: str | Path) -> str:
     runs = list_runs(artifact_dir)
-    body = ["<h1>NightShift Dashboard</h1>", '<meta http-equiv="refresh" content="5">']
+    body = [
+        "<h1>NightShift Dashboard</h1>",
+        '<meta http-equiv="refresh" content="5">',
+        "<p>Showing artifact files from the newest run first. This page is read-only and refreshes every 5 seconds.</p>",
+    ]
     if not runs:
         body.append("<p>No runs found.</p>")
-    for run in runs:
+    for index, run in enumerate(runs):
+        title = "Latest Run" if index == 0 else "Older Run"
         body.extend(
             [
-                f"<section><h2>{escape(run.name)}</h2>",
+                f"<section><h2>{title}: {escape(run.name)}</h2>",
                 "<pre>",
                 escape(run.summary),
                 "</pre>",
@@ -84,11 +89,15 @@ def create_app(project_root: str | Path = ".", artifact_dir: str | Path = ".nigh
 
     @app.get("/")
     def index():
-        return Response(render_dashboard(artifacts), mimetype="text/html")
+        response = Response(render_dashboard(artifacts), mimetype="text/html")
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
 
     @app.get("/runs/<run_id>/<path:artifact_path>")
     def artifact(run_id: str, artifact_path: str):
         content = read_artifact(artifacts / "runs" / run_id, artifact_path)
-        return Response(f"<pre>{escape(content)}</pre>", mimetype="text/html")
+        response = Response(f"<pre>{escape(content)}</pre>", mimetype="text/html")
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
 
     return app

@@ -16,6 +16,8 @@ from .safety import resolve_inside_root, resolve_project_root, validate_scoped_p
 
 DEFAULT_MAX_BYTES = 20_000
 DEFAULT_MAX_MATCHES = 100
+DEFAULT_MAX_LOOKUP_REQUESTS = 8
+SKIPPED_REPO_PARTS = {".git", ".nightshift", "__pycache__", ".venv", "venv"}
 
 
 @dataclass(frozen=True)
@@ -55,7 +57,7 @@ class RepoTools:
         relative_files = [
             _relative(item, self.project_root)
             for item in sorted(candidates)
-            if fnmatch.fnmatch(item.name, pattern)
+            if fnmatch.fnmatch(item.name, pattern) and not _is_skipped_repo_path(item, self.project_root)
         ]
         lines = relative_files[:max_files]
         if len(relative_files) > max_files:
@@ -64,6 +66,8 @@ class RepoTools:
 
     def read_file(self, path: str, max_bytes: int = DEFAULT_MAX_BYTES) -> str:
         file_path = self._resolve_scoped(path, "read_file path")
+        if _is_skipped_repo_path(file_path, self.project_root):
+            return f"Path is skipped for repository lookup: {path}"
         if not file_path.exists() or not file_path.is_file():
             return f"File not found: {path}"
         data = file_path.read_bytes()[:max_bytes + 1]
@@ -85,6 +89,8 @@ class RepoTools:
         files = [root] if root.is_file() else [item for item in root.rglob("*") if item.is_file()]
         matches: list[str] = []
         for file_path in sorted(files):
+            if _is_skipped_repo_path(file_path, self.project_root):
+                continue
             try:
                 text = file_path.read_text(encoding="utf-8", errors="replace")
             except OSError:
@@ -110,7 +116,8 @@ class RepoTools:
 
     def execute_requests(self, task_id: str, requests: list[ToolCall], filename: str = "repo-tools.md") -> str:
         completed: list[ToolCall] = []
-        for request in requests:
+        unique_requests = dedupe_tool_calls(requests)[:DEFAULT_MAX_LOOKUP_REQUESTS]
+        for request in unique_requests:
             self.logger.event(
                 "tool.call",
                 "Running repo lookup tool",
@@ -175,7 +182,7 @@ def format_tool_calls(calls: list[ToolCall]) -> str:
     return "\n".join(lines)
 
 
-def parse_lookup_requests(text: str) -> list[ToolCall]:
+def parse_lookup_requests(text: str, max_requests: int = DEFAULT_MAX_LOOKUP_REQUESTS) -> list[ToolCall]:
     """Parse a small YAML-like lookup request list from model output."""
 
     lines = text.splitlines()
@@ -215,7 +222,19 @@ def parse_lookup_requests(text: str) -> list[ToolCall]:
             flush()
         current[key] = value
     flush()
-    return requests
+    return dedupe_tool_calls(requests)[:max_requests]
+
+
+def dedupe_tool_calls(requests: list[ToolCall]) -> list[ToolCall]:
+    seen: set[tuple[str, tuple[tuple[str, str], ...]]] = set()
+    unique: list[ToolCall] = []
+    for request in requests:
+        key = (request.name, tuple(sorted(request.arguments.items())))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(request)
+    return unique
 
 
 def extract_agent_stdout(artifact_text: str) -> str:
@@ -249,3 +268,11 @@ def _relative(path: Path, root: Path) -> str:
         return path.relative_to(root).as_posix()
     except ValueError:
         return path.as_posix()
+
+
+def _is_skipped_repo_path(path: Path, root: Path) -> bool:
+    try:
+        parts = set(path.relative_to(root).parts)
+    except ValueError:
+        parts = set(path.parts)
+    return bool(parts & SKIPPED_REPO_PARTS)

@@ -6,7 +6,9 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
+import tempfile
 import time
 from urllib import request
 from urllib.error import URLError
@@ -21,6 +23,7 @@ from .tasks import Task
 
 
 DEFAULT_AGENT_TIMEOUT_SECONDS = 600
+OLLAMA_HEARTBEAT_SECONDS = 30.0
 
 
 @dataclass(frozen=True)
@@ -224,27 +227,74 @@ class AgentExecutor:
         if agent.temperature is not None:
             prompt_input = f"/set parameter temperature {agent.temperature}\n{prompt}"
         started = time.monotonic()
+        self.logger.event(
+            "ollama.start",
+            "Starting Ollama model invocation",
+            agent_id=agent.id,
+            model=agent.model,
+            timeout_seconds=self.timeout_seconds,
+        )
         try:
-            completed = subprocess.run(
-                ["ollama", "run", agent.model],
-                cwd=self.project_root,
-                input=prompt_input,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=self.timeout_seconds,
-            )
-            duration = time.monotonic() - started
-            return AgentInvocation(
-                agent_id=agent.id,
-                command=command,
-                prompt=prompt_input,
-                exit_code=completed.returncode,
-                stdout=_coerce_output(completed.stdout),
-                stderr=_coerce_output(completed.stderr),
-                duration_seconds=duration,
-            )
+            with tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as stdout_file:
+                with tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as stderr_file:
+                    process = subprocess.Popen(
+                        ["ollama", "run", agent.model],
+                        cwd=self.project_root,
+                        stdin=subprocess.PIPE,
+                        stdout=stdout_file,
+                        stderr=stderr_file,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                    )
+                    assert process.stdin is not None
+                    process.stdin.write(prompt_input)
+                    process.stdin.close()
+                    last_heartbeat = started
+                    timed_out = False
+                    while process.poll() is None:
+                        now = time.monotonic()
+                        elapsed = now - started
+                        if elapsed > self.timeout_seconds:
+                            process.kill()
+                            timed_out = True
+                            break
+                        if now - last_heartbeat >= OLLAMA_HEARTBEAT_SECONDS:
+                            self.logger.event(
+                                "ollama.wait",
+                                "Ollama invocation still running",
+                                agent_id=agent.id,
+                                model=agent.model,
+                                elapsed=f"{elapsed:.0f}s",
+                            )
+                            last_heartbeat = now
+                        time.sleep(1.0)
+                    process.wait()
+                    duration = time.monotonic() - started
+                    stdout_file.seek(0)
+                    stderr_file.seek(0)
+                    stdout = stdout_file.read()
+                    stderr = stderr_file.read()
+                    if timed_out:
+                        return AgentInvocation(
+                            agent_id=agent.id,
+                            command=command,
+                            prompt=prompt_input,
+                            exit_code=-1,
+                            stdout=stdout,
+                            stderr=stderr,
+                            duration_seconds=duration,
+                            timed_out=True,
+                        )
+                    return AgentInvocation(
+                        agent_id=agent.id,
+                        command=command,
+                        prompt=prompt_input,
+                        exit_code=process.returncode or 0,
+                        stdout=stdout,
+                        stderr=stderr,
+                        duration_seconds=duration,
+                    )
         except FileNotFoundError as exc:
             duration = time.monotonic() - started
             return AgentInvocation(
@@ -256,17 +306,16 @@ class AgentExecutor:
                 stderr=str(exc),
                 duration_seconds=duration,
             )
-        except subprocess.TimeoutExpired as exc:
+        except OSError as exc:
             duration = time.monotonic() - started
             return AgentInvocation(
                 agent_id=agent.id,
                 command=command,
                 prompt=prompt_input,
-                exit_code=-1,
-                stdout=_coerce_output(exc.stdout),
-                stderr=_coerce_output(exc.stderr),
+                exit_code=1,
+                stdout="",
+                stderr=str(exc),
                 duration_seconds=duration,
-                timed_out=True,
             )
 
     def _invoke_openai_compatible(self, agent: AgentConfig, prompt: str) -> AgentInvocation:
@@ -390,8 +439,12 @@ def _coerce_output(value: str | bytes | None) -> str:
     if value is None:
         return ""
     if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
-    return value
+        value = value.decode("utf-8", errors="replace")
+    return strip_ansi_escape_sequences(value)
+
+
+def strip_ansi_escape_sequences(value: str) -> str:
+    return re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", value)
 
 
 def _extract_openai_content(raw: str) -> str:
@@ -445,6 +498,11 @@ def output_contract_for(stage: StageConfig) -> str:
                 "- tool: list_files | read_file | grep",
                 "  path: <relative path>",
                 "  pattern: <glob for list_files or regex for grep>",
+                "",
+                "Use at most 5 lookup requests.",
+                "Do not repeat the same lookup request.",
+                "Prefer read_file for likely-relevant files over many grep variations.",
+                "Do not search .nightshift, .git, virtualenvs, caches, or artifact directories.",
                 "",
                 "NightShift will run these read-only lookup tools, save files-inspected.md, and re-run this planner stage with the retrieved context.",
             ]

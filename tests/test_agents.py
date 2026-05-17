@@ -1,9 +1,10 @@
 from pathlib import Path
+import io
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-from nightshift.agents import AgentExecutor, build_prompt_bundle, parse_review_output
+from nightshift.agents import AgentExecutor, build_prompt_bundle, parse_review_output, strip_ansi_escape_sequences
 from nightshift.agents import AgentInvocation, format_agent_invocation
 from nightshift.artifacts import ArtifactStore
 from nightshift.config import AgentConfig, StageConfig
@@ -118,17 +119,25 @@ class AgentExecutorTests(unittest.TestCase):
             task = parse_tasks(TASK_MD)[0]
             stage = StageConfig(id="plan", type="agent", agent="planner", output="plan.md")
 
-            completed = type(
-                "Completed",
-                (),
-                {"returncode": 0, "stdout": "ollama output", "stderr": ""},
-            )()
-            with patch("nightshift.agents.subprocess.run", return_value=completed) as run:
+            class FakePopen:
+                def __init__(self, args, cwd=None, stdin=None, stdout=None, stderr=None, **kwargs):
+                    self.args = args
+                    self.stdin = io.StringIO()
+                    self.returncode = 0
+                    stdout.write("ollama output")
+
+                def poll(self):
+                    return self.returncode
+
+                def wait(self):
+                    return self.returncode
+
+            with patch("nightshift.agents.subprocess.Popen", side_effect=FakePopen) as popen:
                 result = executor.run_stage(stage, task)
 
             self.assertEqual(result.status, "pass")
-            run.assert_called_once()
-            self.assertEqual(run.call_args.args[0], ["ollama", "run", "tiny-model"])
+            popen.assert_called_once()
+            self.assertEqual(popen.call_args.args[0], ["ollama", "run", "tiny-model"])
             output = (root / result.output_path).read_text(encoding="utf-8")
             self.assertIn("ollama run tiny-model", output)
 
@@ -184,6 +193,9 @@ class AgentExecutorTests(unittest.TestCase):
 
         self.assertIn("Agent: `planner`", output)
         self.assertIn("## stderr", output)
+
+    def test_strip_ansi_escape_sequences(self) -> None:
+        self.assertEqual(strip_ansi_escape_sequences("\x1b[?25lthinking\x1b[0m"), "thinking")
 
 
 if __name__ == "__main__":

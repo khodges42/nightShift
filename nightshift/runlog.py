@@ -27,18 +27,23 @@ class RunLogger:
         self.console = console
         self._run_log_path: Path | None = None
         self._aggregate_log_path: Path | None = None
+        self._initialized_run_logs: set[Path] = set()
 
     def bind(self, artifacts: ArtifactStore) -> None:
         artifacts.initialize_run()
         self._run_log_path = artifacts.run_log_path
         self._aggregate_log_path = artifacts.aggregate_log_path
+        if self._run_log_path not in self._initialized_run_logs:
+            self._run_log_path.parent.mkdir(parents=True, exist_ok=True)
+            self._run_log_path.write_text("", encoding="utf-8")
+            self._initialized_run_logs.add(self._run_log_path)
 
     def event(self, event: str, message: str, **fields: object) -> None:
         safe_fields = _redact_fields(fields)
         line = format_log_line(LogEvent(event=event, message=message, fields=safe_fields))
         if self.console is not None:
             self.console(line)
-        for path in (self._run_log_path, self._aggregate_log_path):
+        for path in (self._run_log_path,):
             if path is None:
                 continue
             path.parent.mkdir(parents=True, exist_ok=True)
