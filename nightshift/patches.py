@@ -81,6 +81,8 @@ def validate_patch(
 
     for path_text in files:
         _validate_patch_path(path_text, root, scoped_roots, forbidden_paths)
+    _validate_hunk_lines(patch)
+    _validate_file_states(patch, root)
     return PatchValidationResult(files=tuple(sorted(files)), changed_lines=changed_lines)
 
 
@@ -172,6 +174,57 @@ def _patch_files(patch: str) -> set[str]:
     if not saw_hunk:
         raise PipelineError("Patch validation failed: unified diff has no hunk headers.")
     return {path for path in files if path}
+
+
+def _validate_hunk_lines(patch: str) -> None:
+    in_hunk = False
+    for line_number, line in enumerate(patch.splitlines(), start=1):
+        if line.startswith("diff --git "):
+            in_hunk = False
+            continue
+        if line.startswith("@@"):
+            in_hunk = True
+            continue
+        if not in_hunk:
+            continue
+        if line.startswith(("+", "-", " ", "\\")):
+            continue
+        raise PipelineError(
+            "Patch validation failed: malformed hunk line "
+            f"{line_number}; expected ' ', '+', '-', or '\\'."
+        )
+
+
+def _validate_file_states(patch: str, root: Path) -> None:
+    current_path: str | None = None
+    current_is_new = False
+    current_is_deleted = False
+
+    def flush() -> None:
+        if not current_path:
+            return
+        target = root / current_path
+        if current_is_new and target.exists():
+            raise PipelineError(
+                f"Patch validation failed: patch creates existing file `{current_path}`."
+            )
+        if current_is_deleted and not target.exists():
+            raise PipelineError(
+                f"Patch validation failed: patch deletes missing file `{current_path}`."
+            )
+
+    for line in patch.splitlines():
+        if line.startswith("diff --git "):
+            flush()
+            parts = line.split()
+            current_path = _strip_prefix(parts[3]) if len(parts) >= 4 else None
+            current_is_new = False
+            current_is_deleted = False
+        elif line.startswith("new file mode "):
+            current_is_new = True
+        elif line.startswith("deleted file mode "):
+            current_is_deleted = True
+    flush()
 
 
 def _changed_line_count(patch: str) -> int:

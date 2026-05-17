@@ -177,6 +177,7 @@ pipeline:
       type: patch_apply
       mode: apply
       output: patch-apply-output.txt
+      on_fail: implement
 
     - id: test
       type: command

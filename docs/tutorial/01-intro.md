@@ -167,6 +167,7 @@ In `nightshift.yaml`:
   type: patch_apply
   mode: dry_run
   output: patch-apply-output.txt
+  on_fail: implement
 ```
 
 Run one task:
@@ -199,6 +200,7 @@ If the dry run looks good, switch to apply mode:
   type: patch_apply
   mode: apply
   output: patch-apply-output.txt
+  on_fail: implement
 ```
 
 Run again:
