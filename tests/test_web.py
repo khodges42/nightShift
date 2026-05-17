@@ -39,6 +39,7 @@ class WebDashboardTests(unittest.TestCase):
             self.assertIn("Log Tail", dashboard)
             self.assertIn("Planner proposed", dashboard)
             self.assertIn("FAILED", dashboard)
+            self.assertIn("/assets/logo.png", dashboard)
             self.assertIn("artifact-link", dashboard)
             self.assertIn("line 119", dashboard)
             self.assertNotIn("line 19\n", dashboard)

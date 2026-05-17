@@ -63,7 +63,7 @@ def render_dashboard(artifact_dir: str | Path) -> str:
         _style_block(),
         '<main class="shell">',
         '<header class="hero">',
-        '<div><p class="eyebrow">Local artifact dashboard</p><h1>NightShift</h1></div>',
+        '<div class="brand"><img src="/assets/logo.png" alt="NightShift logo"><div><p class="eyebrow">Local artifact dashboard</p><h1>NightShift</h1></div></div>',
         '<div class="hero-copy">Read-only run review. Auto-refreshes every 5 seconds.</div>',
         "</header>",
     ]
@@ -154,6 +154,15 @@ def create_app(project_root: str | Path = ".", artifact_dir: str | Path = ".nigh
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response
 
+    @app.get("/assets/logo.png")
+    def logo():
+        logo_path = root / "docs" / "images" / "logo.png"
+        if not logo_path.exists():
+            return Response(status=404)
+        response = Response(logo_path.read_bytes(), mimetype="image/png")
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
+
     return app
 
 
@@ -220,6 +229,8 @@ body {
 .shell { width: min(1320px, calc(100vw - 32px)); margin: 0 auto; padding: 28px 0 48px; }
 .hero, .run-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .hero { margin-bottom: 26px; }
+.brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.brand img { width: 58px; height: 58px; object-fit: contain; filter: drop-shadow(0 10px 24px rgba(125, 211, 252, .18)); }
 .eyebrow, .run-kicker { margin: 0 0 4px; color: var(--blue); font-size: 12px; text-transform: uppercase; letter-spacing: .12em; }
 h1, h2, h3 { margin: 0; letter-spacing: 0; }
 h1 { font-size: 40px; line-height: 1; }
@@ -278,6 +289,7 @@ pre {
 .muted { color: var(--muted); }
 @media (max-width: 900px) {
   .hero, .run-head { align-items: flex-start; flex-direction: column; }
+  .brand img { width: 48px; height: 48px; }
   .hero-copy { text-align: left; }
   .grid { grid-template-columns: 1fr; }
   .span-2 { grid-column: span 1; }
