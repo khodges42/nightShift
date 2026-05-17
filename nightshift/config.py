@@ -32,6 +32,7 @@ class SafetyConfig:
     scoped_paths: tuple[str, ...]
     allowed_commands: tuple[str, ...]
     forbidden_commands: tuple[str, ...]
+    allowed_env: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,15 @@ class StageConfig:
     commands: tuple[str, ...] = ()
     output: str | None = None
     on_fail: str | None = None
+    shell: bool = True
+    timeout_seconds: int | None = None
+    working_dir: Path | None = None
+
+
+@dataclass(frozen=True)
+class ExperimentConfig:
+    label: str | None = None
+    prompt_variant: str | None = None
 
 
 @dataclass(frozen=True)
@@ -68,6 +78,7 @@ class NightShiftConfig:
     safety: SafetyConfig
     agents: dict[str, AgentConfig]
     pipeline: PipelineConfig
+    experiment: ExperimentConfig = ExperimentConfig()
 
 
 AGENT_STAGE_TYPES = {"agent", "agent_review", "review"}
@@ -110,6 +121,11 @@ def validate_config(path: str | Path = "nightshift.yaml") -> NightShiftConfig:
             )
 
     for stage in config.pipeline.stages:
+        if stage.working_dir is not None:
+            try:
+                resolve_inside_root(root, stage.working_dir, f"stage '{stage.id}' working_dir")
+            except SafetyError as exc:
+                raise ConfigError(f"Config error: {exc}") from exc
         for command in stage.commands:
             try:
                 ensure_command_allowed(
@@ -153,6 +169,7 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
         forbidden_commands=_string_tuple(
             safety_raw.get("forbidden_commands", []), "safety.forbidden_commands"
         ),
+        allowed_env=_string_tuple(safety_raw.get("allowed_env", []), "safety.allowed_env"),
     )
 
     agents_raw = _require_mapping(raw["agents"], "agents")
@@ -163,14 +180,19 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
         agent_raw = _require_mapping(agent_raw_value, f"agents.{agent_id}")
         backend = _require_string(agent_raw, "backend", f"agents.{agent_id}")
         command = _optional_string(agent_raw.get("command"), f"agents.{agent_id}.command")
-        if backend != "command":
+        model = _optional_string(agent_raw.get("model"), f"agents.{agent_id}.model")
+        if backend not in {"command", "ollama"}:
             raise ConfigError(
                 f"Config error: agent '{agent_id}' uses unsupported backend '{backend}'. "
-                "Supported backends: command."
+                "Supported backends: command, ollama."
             )
-        if command is None:
+        if backend == "command" and command is None:
             raise ConfigError(
                 f"Config error: command backend agent '{agent_id}' must define command."
+            )
+        if backend == "ollama" and model is None:
+            raise ConfigError(
+                f"Config error: ollama backend agent '{agent_id}' must define model."
             )
         system_prompt = Path(_require_string(agent_raw, "system_prompt", f"agents.{agent_id}"))
         agents[str(agent_id)] = AgentConfig(
@@ -178,9 +200,20 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
             backend=backend,
             command=command,
             system_prompt=system_prompt,
-            model=_optional_string(agent_raw.get("model"), f"agents.{agent_id}.model"),
+            model=model,
             role=_optional_string(agent_raw.get("role"), f"agents.{agent_id}.role"),
         )
+
+    experiment_raw = raw.get("experiment", {})
+    if experiment_raw is None:
+        experiment_raw = {}
+    experiment_raw = _require_mapping(experiment_raw, "experiment")
+    experiment = ExperimentConfig(
+        label=_optional_string(experiment_raw.get("label"), "experiment.label"),
+        prompt_variant=_optional_string(
+            experiment_raw.get("prompt_variant"), "experiment.prompt_variant"
+        ),
+    )
 
     pipeline_raw = _require_mapping(raw["pipeline"], "pipeline")
     max_task_retries = _optional_int(
@@ -218,6 +251,13 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
 
         agent = _optional_string(stage_raw.get("agent"), f"{stage_context}.agent")
         commands = _string_tuple(stage_raw.get("commands", []), f"{stage_context}.commands")
+        timeout_seconds = _optional_int_or_none(
+            stage_raw.get("timeout_seconds"),
+            f"{stage_context}.timeout_seconds",
+        )
+        if timeout_seconds is not None and timeout_seconds <= 0:
+            raise ConfigError(f"Config error: {stage_context}.timeout_seconds must be greater than zero.")
+        working_dir_raw = _optional_string(stage_raw.get("working_dir"), f"{stage_context}.working_dir")
 
         if stage_type in AGENT_STAGE_TYPES:
             if agent is None:
@@ -244,6 +284,9 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
                 commands=commands,
                 output=_optional_string(stage_raw.get("output"), f"{stage_context}.output"),
                 on_fail=_optional_string(stage_raw.get("on_fail"), f"{stage_context}.on_fail"),
+                shell=_optional_bool(stage_raw.get("shell", True), f"{stage_context}.shell"),
+                timeout_seconds=timeout_seconds,
+                working_dir=Path(working_dir_raw) if working_dir_raw else None,
             )
         )
 
@@ -264,6 +307,7 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
             stages=tuple(stages),
             continue_on_task_failure=continue_on_task_failure,
         ),
+        experiment=experiment,
     )
 
 
@@ -440,6 +484,12 @@ def _optional_int(value: Any, context: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ConfigError(f"Config error: '{context}' must be an integer.")
     return value
+
+
+def _optional_int_or_none(value: Any, context: str) -> int | None:
+    if value is None:
+        return None
+    return _optional_int(value, context)
 
 
 def _string_tuple(value: Any, context: str) -> tuple[str, ...]:

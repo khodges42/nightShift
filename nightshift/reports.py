@@ -21,9 +21,17 @@ class TaskReport:
 class ReportGenerator:
     """Write task and run summaries from pipeline results."""
 
-    def __init__(self, project_root: Path, artifacts: ArtifactStore) -> None:
+    def __init__(
+        self,
+        project_root: Path,
+        artifacts: ArtifactStore,
+        experiment_label: str | None = None,
+        prompt_variant: str | None = None,
+    ) -> None:
         self.project_root = project_root
         self.artifacts = artifacts
+        self.experiment_label = experiment_label
+        self.prompt_variant = prompt_variant
 
     def write_reports(
         self,
@@ -51,6 +59,8 @@ class ReportGenerator:
                 modified_files=modified_files,
                 stage_results_path=stage_results_path,
                 context_out_path=context_out_path,
+                experiment_label=self.experiment_label,
+                prompt_variant=self.prompt_variant,
             ),
         )
         self.artifacts.run_summary_path.write_text(
@@ -62,6 +72,8 @@ class ReportGenerator:
                 modified_files=modified_files,
                 final_notes_path=final_notes_path,
                 stage_results_path=stage_results_path,
+                experiment_label=self.experiment_label,
+                prompt_variant=self.prompt_variant,
             ),
             encoding="utf-8",
         )
@@ -109,6 +121,8 @@ def format_task_report(
     modified_files: list[str],
     stage_results_path: Path,
     context_out_path: Path | None,
+    experiment_label: str | None = None,
+    prompt_variant: str | None = None,
 ) -> str:
     stage_lines = "\n".join(
         f"- `{result.stage_id}`: {result.status} ({result.reason})" for result in stage_results
@@ -129,6 +143,11 @@ def format_task_report(
             f"Status: {status}",
             f"Retry count: {retry_count}",
             f"Reason: {reason}",
+            "",
+            "## Experiment",
+            "",
+            f"- Label: {experiment_label or ''}",
+            f"- Prompt variant: {prompt_variant or ''}",
             "",
             "## Acceptance Criteria",
             "",
@@ -158,6 +177,8 @@ def format_run_summary(
     modified_files: list[str],
     final_notes_path: Path,
     stage_results_path: Path,
+    experiment_label: str | None = None,
+    prompt_variant: str | None = None,
 ) -> str:
     modified = "\n".join(f"- `{path}`" for path in modified_files) if modified_files else "- Unavailable or none detected"
     return "\n".join(
@@ -168,6 +189,8 @@ def format_run_summary(
             f"- Status: {status}",
             f"- Retry count: {retry_count}",
             f"- Reason: {reason}",
+            f"- Experiment label: {experiment_label or ''}",
+            f"- Prompt variant: {prompt_variant or ''}",
             "",
             "## Modified Files",
             "",

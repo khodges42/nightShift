@@ -1,6 +1,7 @@
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from nightshift.agents import AgentExecutor, build_prompt_bundle, parse_review_output
 from nightshift.artifacts import ArtifactStore
@@ -93,6 +94,42 @@ class AgentExecutorTests(unittest.TestCase):
         self.assertEqual(reason, "Needs changes")
         self.assertEqual(next_stage, "implement")
         self.assertEqual(context_update, "Fix tests")
+
+    def test_ollama_agent_invocation_uses_model_without_real_ollama(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            prompt_path = root / "planner.md"
+            prompt_path.write_text("Plan carefully.", encoding="utf-8")
+            artifacts = ArtifactStore(root, ".nightshift", run_id="test-run")
+            executor = AgentExecutor(
+                root,
+                {
+                    "planner": AgentConfig(
+                        id="planner",
+                        backend="ollama",
+                        command=None,
+                        model="tiny-model",
+                        system_prompt=Path("planner.md"),
+                    )
+                },
+                artifacts,
+            )
+            task = parse_tasks(TASK_MD)[0]
+            stage = StageConfig(id="plan", type="agent", agent="planner", output="plan.md")
+
+            completed = type(
+                "Completed",
+                (),
+                {"returncode": 0, "stdout": "ollama output", "stderr": ""},
+            )()
+            with patch("nightshift.agents.subprocess.run", return_value=completed) as run:
+                result = executor.run_stage(stage, task)
+
+            self.assertEqual(result.status, "pass")
+            run.assert_called_once()
+            self.assertEqual(run.call_args.args[0], ["ollama", "run", "tiny-model"])
+            output = (root / result.output_path).read_text(encoding="utf-8")
+            self.assertIn("ollama run tiny-model", output)
 
 
 if __name__ == "__main__":

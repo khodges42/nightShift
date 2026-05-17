@@ -33,8 +33,8 @@ class AgentInvocation:
 class AgentExecutor:
     """Execute configured agents.
 
-    v1 supports the `command` backend only. The command receives the prompt
-    bundle on stdin and its stdout/stderr are persisted as the stage artifact.
+    Supports command-backed agents and a first-class Ollama backend. Both
+    receive the same prompt bundle on stdin and persist comparable artifacts.
     """
 
     def __init__(
@@ -64,12 +64,14 @@ class AgentExecutor:
         agent = self.agents.get(stage.agent)
         if agent is None:
             raise AgentError(f"Agent error: unknown agent '{stage.agent}' for stage '{stage.id}'.")
-        if agent.backend != "command":
+        if agent.backend not in {"command", "ollama"}:
             raise AgentError(
                 f"Agent error: agent '{agent.id}' uses unsupported backend '{agent.backend}'."
             )
-        if not agent.command:
+        if agent.backend == "command" and not agent.command:
             raise AgentError(f"Agent error: command backend agent '{agent.id}' has no command.")
+        if agent.backend == "ollama" and not agent.model:
+            raise AgentError(f"Agent error: ollama backend agent '{agent.id}' has no model.")
 
         system_prompt = self._read_system_prompt(agent)
         prompt = build_prompt_bundle(
@@ -131,6 +133,13 @@ class AgentExecutor:
         return self.artifacts.project_context_path.read_text(encoding="utf-8")
 
     def _invoke(self, agent: AgentConfig, prompt: str) -> AgentInvocation:
+        if agent.backend == "ollama":
+            return self._invoke_ollama(agent, prompt)
+        return self._invoke_command(agent, prompt)
+
+    def _invoke_command(self, agent: AgentConfig, prompt: str) -> AgentInvocation:
+        if not agent.command:
+            raise AgentError(f"Agent error: command backend agent '{agent.id}' has no command.")
         started = time.monotonic()
         try:
             completed = subprocess.run(
@@ -157,6 +166,54 @@ class AgentExecutor:
             return AgentInvocation(
                 agent_id=agent.id,
                 command=agent.command,
+                prompt=prompt,
+                exit_code=-1,
+                stdout=_coerce_output(exc.stdout),
+                stderr=_coerce_output(exc.stderr),
+                duration_seconds=duration,
+                timed_out=True,
+            )
+
+    def _invoke_ollama(self, agent: AgentConfig, prompt: str) -> AgentInvocation:
+        if not agent.model:
+            raise AgentError(f"Agent error: ollama backend agent '{agent.id}' has no model.")
+        command = f"ollama run {agent.model}"
+        started = time.monotonic()
+        try:
+            completed = subprocess.run(
+                ["ollama", "run", agent.model],
+                cwd=self.project_root,
+                input=prompt,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout_seconds,
+            )
+            duration = time.monotonic() - started
+            return AgentInvocation(
+                agent_id=agent.id,
+                command=command,
+                prompt=prompt,
+                exit_code=completed.returncode,
+                stdout=completed.stdout,
+                stderr=completed.stderr,
+                duration_seconds=duration,
+            )
+        except FileNotFoundError as exc:
+            duration = time.monotonic() - started
+            return AgentInvocation(
+                agent_id=agent.id,
+                command=command,
+                prompt=prompt,
+                exit_code=127,
+                stdout="",
+                stderr=str(exc),
+                duration_seconds=duration,
+            )
+        except subprocess.TimeoutExpired as exc:
+            duration = time.monotonic() - started
+            return AgentInvocation(
+                agent_id=agent.id,
+                command=command,
                 prompt=prompt,
                 exit_code=-1,
                 stdout=_coerce_output(exc.stdout),

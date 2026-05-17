@@ -1086,6 +1086,51 @@ Notes:
 
 ---
 
+## Phase 22: Quickstart Test Project
+
+* [ ] Add a guided quickstart project to `QUICKSTART.md`
+* [ ] Recommend a small Python Lisp interpreter as the default test project
+* [ ] Provide a multi-task `tasks.md` example
+* [ ] Provide a matching `nightshift.yaml` example
+* [ ] Provide suggested planner, implementer, and reviewer prompt files
+* [ ] Include dependency examples across tasks
+* [ ] Include commands for validation, `run --task`, and `run --all`
+* [ ] Explain what artifacts the user should inspect after each run
+
+Acceptance Criteria:
+
+* A new user can create a small target repo and exercise NightShift end to end
+* The project has multiple independently reviewable tasks
+* Tasks are small enough for local/fake agents but realistic enough to test planning, implementation, tests, retries, artifacts, and dependencies
+* The quickstart does not require external services
+
+Recommended Project:
+
+* A minimal Lisp interpreter in Python is a good test project because it is compact, incremental, testable, and naturally splits into parser, evaluator, environment, builtins, and error-handling tasks.
+
+Alternative Projects:
+
+* If the Lisp interpreter feels too language-theory focused, use a small INI/TOML-like config parser or a markdown todo CLI. Both are also compact and testable, but the Lisp interpreter gives better coverage of multi-step implementation and test generation.
+
+---
+
+## Phase 17-22 Implementation Status
+
+Phases 17 through 22 are implemented.
+
+Implemented capabilities:
+
+* Ollama agent backend
+* Experiment metadata and prompt snapshots
+* Stronger command execution options
+* Config reference, artifact review, and troubleshooting docs
+* Read-only Flask dashboard entry point
+* Complete quickstart Lisp example project
+
+See `docs/devlog/phase17.md` through `docs/devlog/phase22.md` for implementation notes and decisions.
+
+---
+
 # Appendix A: Design Decisions and Rationale
 
 ## A.1 Local-first architecture

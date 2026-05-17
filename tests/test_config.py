@@ -128,6 +128,66 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(ConfigError, "must define command"):
                 load_config(config_path)
 
+    def test_ollama_backend_requires_model(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            init_project(root)
+            config_path = root / "nightshift.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace(
+                    "backend: command\n    command: echo",
+                    "backend: ollama",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ConfigError, "must define model"):
+                load_config(config_path)
+
+    def test_ollama_backend_and_experiment_metadata_load(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            init_project(root)
+            config_path = root / "nightshift.yaml"
+            text = config_path.read_text(encoding="utf-8").replace(
+                "backend: command\n    command: echo",
+                "backend: ollama\n    model: qwen2.5-coder:14b",
+                1,
+            )
+            text = text.replace(
+                "agents:",
+                "experiment:\n  label: local-test\n  prompt_variant: v1\n\nagents:",
+            )
+            config_path.write_text(text, encoding="utf-8")
+
+            config = load_config(config_path)
+
+            self.assertEqual(config.agents["planner"].backend, "ollama")
+            self.assertEqual(config.agents["planner"].model, "qwen2.5-coder:14b")
+            self.assertEqual(config.experiment.label, "local-test")
+
+    def test_command_stage_options_load(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            init_project(root)
+            config_path = root / "nightshift.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace(
+                    "      output: test-output.txt",
+                    "      output: test-output.txt\n      shell: false\n      timeout_seconds: 30\n      working_dir: .",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+
+            config = load_config(config_path)
+            test_stage = next(stage for stage in config.pipeline.stages if stage.id == "test")
+
+            self.assertFalse(test_stage.shell)
+            self.assertEqual(test_stage.timeout_seconds, 30)
+            self.assertEqual(test_stage.working_dir, Path("."))
+
     def test_non_command_stage_cannot_define_commands(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

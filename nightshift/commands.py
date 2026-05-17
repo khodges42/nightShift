@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
+import shlex
 import subprocess
 import time
 
 from .artifacts import ArtifactStore
 from .config import SafetyConfig, StageConfig
 from .errors import CommandError, SafetyError
-from .safety import ensure_command_allowed, resolve_project_root
+from .safety import ensure_command_allowed, resolve_inside_root, resolve_project_root
 from .stages import StageResult
 
 
@@ -55,11 +57,17 @@ class CommandExecutor:
         reason = "All commands passed."
 
         for command in stage.commands:
-            run = self.run_command(command)
+            run = self.run_command(
+                command,
+                shell=stage.shell,
+                timeout_seconds=stage.timeout_seconds,
+                working_dir=stage.working_dir,
+            )
             runs.append(run)
             if run.timed_out:
                 status = "fail"
-                reason = f"Command timed out after {self.timeout_seconds}s: {run.command}"
+                timeout = stage.timeout_seconds or self.timeout_seconds
+                reason = f"Command timed out after {timeout}s: {run.command}"
                 break
             if run.exit_code != 0:
                 status = "fail"
@@ -79,7 +87,13 @@ class CommandExecutor:
             output_path=str(output_path.relative_to(self.project_root)),
         )
 
-    def run_command(self, command: str) -> CommandRun:
+    def run_command(
+        self,
+        command: str,
+        shell: bool = True,
+        timeout_seconds: int | None = None,
+        working_dir: Path | None = None,
+    ) -> CommandRun:
         try:
             normalized = ensure_command_allowed(
                 command,
@@ -89,15 +103,30 @@ class CommandExecutor:
         except SafetyError as exc:
             raise CommandError(str(exc)) from exc
 
+        cwd = self.project_root
+        if working_dir is not None:
+            try:
+                cwd = resolve_inside_root(self.project_root, working_dir, "command working_dir")
+            except SafetyError as exc:
+                raise CommandError(str(exc)) from exc
+        timeout = timeout_seconds or self.timeout_seconds
+        args: str | list[str] = normalized if shell else shlex.split(normalized)
+        env = None
+        if self.safety.allowed_env:
+            env = {name: os.environ[name] for name in self.safety.allowed_env if name in os.environ}
+            if "PATH" in os.environ:
+                env.setdefault("PATH", os.environ["PATH"])
+
         started = time.monotonic()
         try:
             completed = subprocess.run(
-                normalized,
-                cwd=self.project_root,
-                shell=True,
+                args,
+                cwd=cwd,
+                shell=shell,
                 capture_output=True,
                 text=True,
-                timeout=self.timeout_seconds,
+                timeout=timeout,
+                env=env,
             )
             duration = time.monotonic() - started
             return CommandRun(

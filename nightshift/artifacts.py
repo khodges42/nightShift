@@ -68,6 +68,34 @@ class ArtifactStore:
         shutil.copyfile(source, self.config_snapshot_path)
         return self.config_snapshot_path
 
+    def write_prompt_snapshots(self, prompt_paths: dict[str, Path]) -> list[Path]:
+        """Copy agent prompt files into the run artifact directory."""
+
+        self.initialize_run()
+        prompts_dir = self.run_dir / "prompts"
+        prompts_dir.mkdir(parents=True, exist_ok=True)
+        written: list[Path] = []
+        for agent_id, prompt_path in sorted(prompt_paths.items()):
+            source = prompt_path.resolve()
+            try:
+                source.relative_to(self.project_root)
+            except ValueError as exc:
+                raise ArtifactError(
+                    f"Artifact error: prompt path is outside project root: {source}"
+                ) from exc
+            if not source.exists():
+                raise ArtifactError(f"Artifact error: prompt path does not exist: {source}")
+            target = prompts_dir / f"{_safe_artifact_segment(agent_id, 'agent id')}.md"
+            shutil.copyfile(source, target)
+            written.append(target)
+        return written
+
+    def write_run_metadata(self, content: str, filename: str = "run-metadata.md") -> Path:
+        self.initialize_run()
+        path = self.run_dir / filename
+        path.write_text(content, encoding="utf-8")
+        return path
+
     def create_task_dir(self, task_id: str) -> TaskArtifactPaths:
         """Create the artifact directory for one task."""
 

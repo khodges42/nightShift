@@ -18,6 +18,7 @@ from .tasks import (
     select_task_by_id,
     validate_task_dependencies,
 )
+from .web import create_app
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -40,6 +41,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     status_parser = subparsers.add_parser("status", help="Inspect NightShift project status.")
     status_parser.add_argument("--config", default="nightshift.yaml", help="Config file to inspect.")
+
+    web_parser = subparsers.add_parser("web", help="Start a read-only artifact dashboard.")
+    web_parser.add_argument("--config", default="nightshift.yaml", help="Config file to inspect.")
+    web_parser.add_argument("--host", default="127.0.0.1", help="Host to bind.")
+    web_parser.add_argument("--port", type=int, default=8765, help="Port to bind.")
 
     return parser
 
@@ -99,6 +105,12 @@ def main(argv: list[str] | None = None) -> int:
             config = validate_config(args.config)
             tasks = parse_task_file(config.project.root, config.project.task_file)
             print(format_status(build_status(config, tasks)))
+            return 0
+
+        if args.command == "web":
+            config = validate_config(args.config)
+            app = create_app(config.project.root, config.project.artifact_dir)
+            app.run(host=args.host, port=args.port)
             return 0
 
     except NightShiftError as exc:

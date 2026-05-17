@@ -1,0 +1,68 @@
+project:
+  name: tiny-lisp
+  root: .
+  task_file: tasks.md
+  artifact_dir: .nightshift
+
+safety:
+  require_clean_worktree: false
+  scoped_paths:
+    - .
+  allowed_commands:
+    - python -m unittest discover -v
+  forbidden_commands:
+    - rm -rf
+    - git push
+    - curl | bash
+
+experiment:
+  label: quickstart-lisp
+  prompt_variant: fake-agent-v1
+
+agents:
+  planner:
+    backend: command
+    command: echo
+    system_prompt: agents/planner.md
+
+  implementer:
+    backend: command
+    command: echo
+    system_prompt: agents/implementer.md
+
+  reviewer:
+    backend: command
+    command: python -c "print('status: pass'); print('reason: quickstart reviewer accepted artifacts')"
+    system_prompt: agents/reviewer.md
+
+pipeline:
+  max_task_retries: 1
+  continue_on_task_failure: false
+  stages:
+    - id: plan
+      type: agent
+      agent: planner
+      output: plan.md
+
+    - id: implement
+      type: agent
+      agent: implementer
+      output: implementation-log.md
+
+    - id: test
+      type: command
+      commands:
+        - python -m unittest discover -v
+      output: test-output.txt
+      shell: true
+      timeout_seconds: 60
+
+    - id: review
+      type: agent_review
+      agent: reviewer
+      on_fail: implement
+      output: review.md
+
+    - id: summarize
+      type: summarize
+      output: final-notes.md

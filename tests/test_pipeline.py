@@ -93,6 +93,8 @@ class PipelineRunnerTests(unittest.TestCase):
             self.assertEqual(result.retry_count, 0)
             self.assertTrue((root / ".nightshift" / "runs" / "test-run" / "tasks" / task.id / "plan.md").exists())
             self.assertTrue((root / ".nightshift" / "runs" / "test-run" / "tasks" / task.id / "stage-results.md").exists())
+            self.assertTrue((root / ".nightshift" / "runs" / "test-run" / "prompts" / "planner.md").exists())
+            self.assertTrue((root / ".nightshift" / "runs" / "test-run" / "run-metadata.md").exists())
             self.assertTrue((root / ".nightshift" / "runs" / "test-run" / "tasks" / task.id / "context.md").exists())
             self.assertTrue((root / ".nightshift" / "runs" / "test-run" / "tasks" / task.id / "context-out.md").exists())
             self.assertIn(

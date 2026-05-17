@@ -50,7 +50,12 @@ class PipelineRunner:
         self.config = config
         self.artifacts = artifacts or ArtifactStore.from_config(config)
         self.context = ContextManager(self.artifacts)
-        self.reports = ReportGenerator(config.project.root, self.artifacts)
+        self.reports = ReportGenerator(
+            config.project.root,
+            self.artifacts,
+            experiment_label=config.experiment.label,
+            prompt_variant=config.experiment.prompt_variant,
+        )
         self.agent_executor = AgentExecutor(
             config.project.root,
             config.agents,
@@ -68,6 +73,13 @@ class PipelineRunner:
         ensure_clean_worktree(self.config.project.root, self.config.safety.require_clean_worktree)
         self.artifacts.initialize_run()
         self.artifacts.write_config_snapshot(self.config.path)
+        self.artifacts.write_prompt_snapshots(
+            {
+                agent_id: self.config.project.root / agent.system_prompt
+                for agent_id, agent in self.config.agents.items()
+            }
+        )
+        self.artifacts.write_run_metadata(format_run_metadata(self.config))
         self.artifacts.write_task_snapshot(task)
         write_git_artifacts(self.artifacts, task.id, "before")
         self.context.ensure_project_context()
@@ -332,4 +344,30 @@ def format_aggregate_run_summary(results: list[PipelineResult], status: str, rea
             f"(retries: {result.retry_count}) - {result.reason}"
         )
     lines.append("")
+    return "\n".join(lines)
+
+
+def format_run_metadata(config: NightShiftConfig) -> str:
+    lines = [
+        "# Run Metadata",
+        "",
+        f"Project: {config.project.name}",
+        f"Experiment label: {config.experiment.label or ''}",
+        f"Prompt variant: {config.experiment.prompt_variant or ''}",
+        "",
+        "## Agents",
+        "",
+    ]
+    for agent in config.agents.values():
+        lines.extend(
+            [
+                f"### {agent.id}",
+                "",
+                f"- Backend: {agent.backend}",
+                f"- Model: {agent.model or ''}",
+                f"- Command: {agent.command or ''}",
+                f"- System prompt: {agent.system_prompt}",
+                "",
+            ]
+        )
     return "\n".join(lines)

@@ -119,6 +119,37 @@ class CommandExecutorTests(unittest.TestCase):
             output = (root / result.output_path).read_text(encoding="utf-8")
             self.assertIn("Timed out: true", output)
 
+    def test_command_stage_can_run_without_shell_and_with_working_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            work = root / "work"
+            work.mkdir()
+            command = 'python -c "import pathlib; print(pathlib.Path.cwd().name)"'
+            executor = CommandExecutor(
+                root,
+                SafetyConfig(
+                    require_clean_worktree=False,
+                    scoped_paths=(".",),
+                    allowed_commands=(command,),
+                    forbidden_commands=("rm -rf",),
+                ),
+                ArtifactStore(root, ".nightshift", run_id="test-run"),
+            )
+            stage = StageConfig(
+                id="test",
+                type="command",
+                commands=(command,),
+                output="test-output.txt",
+                shell=False,
+                working_dir=Path("work"),
+            )
+
+            result = executor.run_stage(stage, "TASK-001")
+
+            self.assertEqual(result.status, "pass")
+            output = (root / result.output_path).read_text(encoding="utf-8")
+            self.assertIn("work", output)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -17,6 +17,7 @@ The core MVP is implemented:
 - `nightshift run` executes the next incomplete task.
 - `nightshift run --task TASK-001` executes a specific task.
 - Command-backed agents receive compact prompt bundles on stdin.
+- Ollama-backed agents can call local models with `backend: ollama`.
 - Command stages run through allowlist and forbidden-fragment checks.
 - Runs create `.nightshift/` artifacts, task context, retry context, command output, agent output, final notes, and run summaries.
 - Unit tests cover config, safety, tasks, artifacts, commands, agents, pipeline retries, context, and reports.
@@ -179,7 +180,7 @@ pipeline:
 
 ## Agent Backends
 
-The MVP supports `backend: command`.
+NightShift supports `backend: command` and `backend: ollama`.
 
 NightShift builds a prompt bundle containing:
 
@@ -193,7 +194,17 @@ NightShift builds a prompt bundle containing:
 - retry notes
 - output contract
 
-The prompt is passed to the configured command on stdin. stdout, stderr, exit code, duration, and the prompt are persisted as artifacts.
+The prompt is passed to the configured command or local Ollama model on stdin. stdout, stderr, exit code, duration, and the prompt are persisted as artifacts.
+
+Ollama example:
+
+```yaml
+agents:
+  planner:
+    backend: ollama
+    model: qwen2.5-coder:14b
+    system_prompt: agents/planner.md
+```
 
 Review agents should emit:
 
@@ -264,17 +275,29 @@ Compile-check modules:
 python -m compileall nightshift tests
 ```
 
+Optional read-only dashboard:
+
+```bash
+pip install flask
+nightshift web
+```
+
+Additional docs:
+
+- [Config reference](docs/config-reference.md)
+- [Artifact review workflow](docs/artifact-review.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Quickstart](QUICKSTART.md)
+- [Quickstart Lisp example](examples/quickstart-lisp/)
+
 ## Roadmap
 
 Next major work:
 
-- real local model wrappers
-- stronger git safety and diff capture
-- task completion updates
-- dependency handling
-- richer status command
-- prompt and model experimentation
+- richer local backend support beyond Ollama
 - optional branch isolation
-- longer-run multi-task reports
+- live dashboard enhancements
+- stronger structured command definitions
+- longer-run reporting and resumability
 
 NightShift remains oriented around reviewable output, not blind autonomy.
