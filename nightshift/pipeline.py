@@ -174,6 +174,23 @@ class PipelineRunner:
                 retry_notes.append(f"Context update from '{stage.id}': {result.context_update}")
 
             if result.status == "pass":
+                if result.next_stage:
+                    if result.next_stage not in stage_indexes:
+                        final_status = "failed"
+                        final_reason = (
+                            f"Stage '{stage.id}' requested unknown next stage '{result.next_stage}'."
+                        )
+                        break
+                    self.logger.event(
+                        "stage.next",
+                        "Jumping to requested next stage",
+                        run_id=self.artifacts.run_id,
+                        task_id=task.id,
+                        stage_id=stage.id,
+                        next_stage=result.next_stage,
+                    )
+                    index = stage_indexes[result.next_stage]
+                    continue
                 index += 1
                 continue
 
@@ -595,11 +612,24 @@ class PipelineRunner:
             except PipelineError:
                 summary_filename = "implementation-summary.md" if retry_count == 0 else f"repair-summary-{retry_count}.md"
                 reason = str(exc)
-                if "generated patch has no changes" in reason and retry_count:
-                    reason = (
-                        "File writer error: repair output produced no changes relative to "
-                        "the current workspace. The previous patch was applied, tests failed, "
-                        "and the repair attempt repeated the already-applied file content."
+                if "generated patch has no changes" in reason:
+                    next_stage = self._stage_after_patch_flow(stage.id)
+                    reason = self._no_changes_reason(retry_count)
+                    summary_path = self.artifacts.write_stage_output(
+                        task.id,
+                        summary_filename,
+                        f"# Implementation Summary\n\nStatus: pass\nReason: {reason}\n",
+                    )
+                    return StageResult(
+                        stage.id,
+                        "pass",
+                        reason,
+                        output_path=result.output_path,
+                        next_stage=next_stage,
+                        context_update=(
+                            f"Implementation summary: "
+                            f"{summary_path.relative_to(self.config.project.root).as_posix()}"
+                        ),
                     )
                 self.artifacts.write_stage_output(
                     task.id,
@@ -640,6 +670,32 @@ class PipelineRunner:
     def _writer_agent_stage(self, stage: StageConfig, retry_count: int) -> StageConfig:
         suffix = f"-{retry_count}" if retry_count else ""
         return replace(stage, output=f"{stage.id}-agent-output{suffix}.md")
+
+    def _stage_after_patch_flow(self, current_stage_id: str) -> str | None:
+        stages = list(self.config.pipeline.stages)
+        stage_indexes = {stage.id: index for index, stage in enumerate(stages)}
+        start = stage_indexes.get(current_stage_id)
+        if start is None:
+            return None
+        patch_stage_types = {"patch_normalizer", "patch_validator", "patch_apply"}
+        for stage in stages[start + 1:]:
+            if stage.type in patch_stage_types:
+                continue
+            return stage.id
+        return None
+
+    def _no_changes_reason(self, retry_count: int) -> str:
+        if retry_count:
+            return (
+                "File writer produced no changes relative to the current workspace. "
+                "The previous patch may already be applied; skipping patch stages and "
+                "continuing with verification."
+            )
+        return (
+            "File writer produced no changes relative to the current workspace. "
+            "The task may already be applied locally; skipping patch stages and "
+            "continuing with verification."
+        )
 
     def _run_patch_normalizer_stage(
         self,

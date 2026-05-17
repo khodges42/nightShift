@@ -57,6 +57,7 @@ def read_artifact(run_path: Path, relative_path: str) -> str:
 
 
 def render_dashboard(artifact_dir: str | Path) -> str:
+    artifact_path = Path(artifact_dir).resolve()
     runs = list_runs(artifact_dir)
     body = [
         '<meta http-equiv="refresh" content="5">',
@@ -64,7 +65,7 @@ def render_dashboard(artifact_dir: str | Path) -> str:
         '<main class="shell">',
         '<header class="hero">',
         '<div class="brand"><img src="/assets/logo.png" alt="NightShift logo"><div><p class="eyebrow">Local artifact dashboard</p><h1>NightShift</h1></div></div>',
-        '<div class="hero-copy">Read-only run review. Auto-refreshes every 5 seconds.</div>',
+        f'<div class="hero-copy">Read-only run review. Auto-refreshes every 5 seconds.<br><span class="path-pill">{escape(str(artifact_path))}</span></div>',
         "</header>",
     ]
     if not runs:
@@ -244,6 +245,7 @@ h1 { font-size: 40px; line-height: 1; }
 h2 { font-size: 18px; }
 h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .10em; margin-bottom: 12px; }
 .hero-copy { color: var(--muted); max-width: 420px; text-align: right; }
+.path-pill { display: inline-block; margin-top: 8px; color: #c9d7ea; font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .run-card, .empty {
   border: 1px solid var(--line);
   background: rgba(16, 22, 34, .84);

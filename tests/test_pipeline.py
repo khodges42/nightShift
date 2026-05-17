@@ -498,6 +498,55 @@ Acceptance Criteria:
             self.assertEqual(result.status, "complete")
             self.assertIn("@@ -1 +1 @@", patch.read_text(encoding="utf-8"))
 
+    def test_file_writer_no_changes_skips_patch_stages_and_runs_tests(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            (root / "app.py").write_text("new\n", encoding="utf-8")
+            (root / "fake_writer.py").write_text(
+                "\n".join(
+                    [
+                        "print('```file:app.py')",
+                        "print('new')",
+                        "print('```')",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            test_command = 'python -c "from pathlib import Path; raise SystemExit(0 if Path(\'app.py\').read_text() == \'new\\n\' else 1)"'
+            stages = (
+                StageConfig(id="write", type="file_writer", agent="writer"),
+                StageConfig(id="normalize", type="patch_normalizer"),
+                StageConfig(id="validate", type="patch_validator"),
+                StageConfig(id="apply", type="patch_apply", mode="apply"),
+                StageConfig(id="test", type="command", commands=(test_command,), output="test-output.txt"),
+            )
+            config = make_config(root, stages)
+            config = replace(
+                config,
+                safety=SafetyConfig(
+                    require_clean_worktree=False,
+                    scoped_paths=(".",),
+                    allowed_commands=(test_command,),
+                    forbidden_commands=("rm -rf",),
+                ),
+            )
+            config.agents["writer"] = AgentConfig(
+                id="writer",
+                backend="command",
+                command="python fake_writer.py",
+                system_prompt=Path("planner.md"),
+            )
+            runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+
+            result = runner.run_task(parse_tasks(TASK_MD)[0])
+
+            task_dir = root / ".nightshift" / "runs" / "test-run" / "tasks" / "TASK-001"
+            self.assertEqual(result.status, "complete")
+            self.assertTrue((task_dir / "test-output.txt").exists())
+            self.assertFalse((task_dir / "normalized.patch").exists())
+            self.assertFalse((task_dir / "patch-validation.md").exists())
+
     def test_patch_validator_rejects_unsafe_patch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
