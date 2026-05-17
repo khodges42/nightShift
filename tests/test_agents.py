@@ -1,7 +1,7 @@
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from nightshift.agents import AgentExecutor, build_prompt_bundle, parse_review_output
 from nightshift.agents import AgentInvocation, format_agent_invocation
@@ -131,6 +131,43 @@ class AgentExecutorTests(unittest.TestCase):
             self.assertEqual(run.call_args.args[0], ["ollama", "run", "tiny-model"])
             output = (root / result.output_path).read_text(encoding="utf-8")
             self.assertIn("ollama run tiny-model", output)
+
+    def test_openai_compatible_agent_sends_temperature(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            prompt_path = root / "planner.md"
+            prompt_path.write_text("Plan carefully.", encoding="utf-8")
+            artifacts = ArtifactStore(root, ".nightshift", run_id="test-run")
+            executor = AgentExecutor(
+                root,
+                {
+                    "planner": AgentConfig(
+                        id="planner",
+                        backend="openai_compatible",
+                        command=None,
+                        model="tiny-model",
+                        base_url="http://localhost:11434/v1",
+                        temperature=0.2,
+                        system_prompt=Path("planner.md"),
+                    )
+                },
+                artifacts,
+            )
+            task = parse_tasks(TASK_MD)[0]
+            stage = StageConfig(id="plan", type="agent", agent="planner", output="plan.md")
+            response = MagicMock()
+            response.__enter__.return_value.read.return_value = (
+                b'{"choices":[{"message":{"content":"api output"}}]}'
+            )
+
+            with patch("nightshift.agents.request.urlopen", return_value=response) as urlopen:
+                result = executor.run_stage(stage, task)
+
+            self.assertEqual(result.status, "pass")
+            request_obj = urlopen.call_args.args[0]
+            body = request_obj.data.decode("utf-8")
+            self.assertIn('"temperature": 0.2', body)
+            self.assertIn("api output", (root / result.output_path).read_text(encoding="utf-8"))
 
     def test_agent_artifact_format_tolerates_missing_streams(self) -> None:
         invocation = AgentInvocation(

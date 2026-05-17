@@ -167,6 +167,24 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(config.agents["planner"].model, "qwen2.5-coder:14b")
             self.assertEqual(config.experiment.label, "local-test")
 
+    def test_openai_compatible_backend_loads(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            init_project(root)
+            config_path = root / "nightshift.yaml"
+            text = config_path.read_text(encoding="utf-8").replace(
+                "backend: command\n    command: echo",
+                "backend: openai_compatible\n    model: local-model\n    base_url: http://localhost:11434/v1\n    temperature: 0.1",
+                1,
+            )
+            config_path.write_text(text, encoding="utf-8")
+
+            config = load_config(config_path)
+
+            self.assertEqual(config.agents["planner"].backend, "openai_compatible")
+            self.assertEqual(config.agents["planner"].base_url, "http://localhost:11434/v1")
+            self.assertEqual(config.agents["planner"].temperature, 0.1)
+
     def test_command_stage_options_load(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -187,6 +205,41 @@ class ConfigTests(unittest.TestCase):
             self.assertFalse(test_stage.shell)
             self.assertEqual(test_stage.timeout_seconds, 30)
             self.assertEqual(test_stage.working_dir, Path("."))
+
+    def test_agent_temperature_loads(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            init_project(root)
+            config_path = root / "nightshift.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace(
+                    "    system_prompt: agents/planner.md",
+                    "    system_prompt: agents/planner.md\n    temperature: 0.2",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+
+            config = load_config(config_path)
+
+            self.assertEqual(config.agents["planner"].temperature, 0.2)
+
+    def test_agent_temperature_must_be_number(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            init_project(root)
+            config_path = root / "nightshift.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace(
+                    "    system_prompt: agents/planner.md",
+                    "    system_prompt: agents/planner.md\n    temperature: low",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ConfigError, "temperature"):
+                load_config(config_path)
 
     def test_non_command_stage_cannot_define_commands(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -12,6 +12,7 @@ import time
 from .artifacts import ArtifactStore
 from .config import SafetyConfig, StageConfig
 from .errors import CommandError, SafetyError
+from .runlog import NullRunLogger, RunLogger
 from .safety import ensure_command_allowed, resolve_inside_root, resolve_project_root
 from .stages import StageResult
 
@@ -38,11 +39,13 @@ class CommandExecutor:
         safety: SafetyConfig,
         artifacts: ArtifactStore,
         timeout_seconds: int = DEFAULT_COMMAND_TIMEOUT_SECONDS,
+        logger: RunLogger | None = None,
     ) -> None:
         self.project_root = resolve_project_root(project_root)
         self.safety = safety
         self.artifacts = artifacts
         self.timeout_seconds = timeout_seconds
+        self.logger = logger or NullRunLogger()
 
     def run_stage(self, stage: StageConfig, task_id: str) -> StageResult:
         if stage.type != "command":
@@ -56,7 +59,14 @@ class CommandExecutor:
         status = "pass"
         reason = "All commands passed."
 
-        for command in stage.commands:
+        for index, command in enumerate(stage.commands, start=1):
+            self.logger.event(
+                "command.start",
+                "Starting command",
+                stage_id=stage.id,
+                command_index=index,
+                command=command,
+            )
             run = self.run_command(
                 command,
                 shell=stage.shell,
@@ -64,6 +74,15 @@ class CommandExecutor:
                 working_dir=stage.working_dir,
             )
             runs.append(run)
+            self.logger.event(
+                "command.finish",
+                "Finished command",
+                stage_id=stage.id,
+                command_index=index,
+                exit_code=run.exit_code,
+                duration=f"{run.duration_seconds:.3f}s",
+                timed_out=str(run.timed_out).lower(),
+            )
             if run.timed_out:
                 status = "fail"
                 timeout = stage.timeout_seconds or self.timeout_seconds
@@ -79,6 +98,13 @@ class CommandExecutor:
             task_id,
             output_filename,
             format_command_runs(stage.id, runs),
+        )
+        self.logger.event(
+            "artifact.write",
+            "Wrote command artifact",
+            stage_id=stage.id,
+            task_id=task_id,
+            artifact_path=output_path.relative_to(self.project_root),
         )
         return StageResult(
             stage_id=stage.id,

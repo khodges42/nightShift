@@ -989,18 +989,18 @@ NightShift should make active runs easier to observe from both the CLI and the w
 
 Implementation tasks:
 
-* [ ] Add a small logging module with structured operational events.
-* [ ] Stream human-readable progress to the CLI during `run` and `run --all`.
-* [ ] Include run id, task id, stage id, agent/backend, command index, retry count, status, duration, and artifact path where available.
-* [ ] Write a per-run log file such as `.nightshift/runs/<run-id>/run.log`.
-* [ ] Optionally write or rotate an aggregate `.nightshift/nightshift.log` for cross-run troubleshooting.
-* [ ] Keep logs operational; do not duplicate full prompts, full model responses, or full command output that already lives in artifacts.
-* [ ] Redact or avoid secrets from logged environment/config values.
-* [ ] Add dashboard support for viewing the latest log tail.
-* [ ] Cap the dashboard log view to the last 100 lines by default.
-* [ ] Keep the full per-run log file available as an artifact unless a later size cap is configured.
-* [ ] Auto-refresh the dashboard log view with the existing dashboard refresh model.
-* [ ] Add tests for log writing, CLI progress hooks, dashboard log rendering, missing log files, and the 100-line cap.
+* [x] Add a small logging module with structured operational events.
+* [x] Stream human-readable progress to the CLI during `run` and `run --all`.
+* [x] Include run id, task id, stage id, agent/backend, command index, retry count, status, duration, and artifact path where available.
+* [x] Write a per-run log file such as `.nightshift/runs/<run-id>/run.log`.
+* [x] Optionally write or rotate an aggregate `.nightshift/nightshift.log` for cross-run troubleshooting.
+* [x] Keep logs operational; do not duplicate full prompts, full model responses, or full command output that already lives in artifacts.
+* [x] Redact or avoid secrets from logged environment/config values.
+* [x] Add dashboard support for viewing the latest log tail.
+* [x] Cap the dashboard log view to the last 100 lines by default.
+* [x] Keep the full per-run log file available as an artifact unless a later size cap is configured.
+* [x] Auto-refresh the dashboard log view with the existing dashboard refresh model.
+* [x] Add tests for log writing, CLI progress hooks, dashboard log rendering, missing log files, and the 100-line cap.
 
 Acceptance Criteria:
 
@@ -1019,35 +1019,35 @@ Notes:
 
 ## Phase 24: Per-Agent Model Parameters
 
-- [ ] Add `temperature` to agent config.
-- [ ] Pass temperature to Ollama/OpenAI-compatible backends.
-- [ ] Default safely if omitted.
-- [ ] Add config validation tests.
+- [x] Add `temperature` to agent config.
+- [x] Pass temperature to Ollama/OpenAI-compatible backends.
+- [x] Default safely if omitted.
+- [x] Add config validation tests.
 
 ## Phase 25: Repo Lookup Tools MVP
 
-- [ ] Add tool interface for repo operations.
-- [ ] Implement scoped `list_files`.
-- [ ] Implement scoped `read_file`.
-- [ ] Implement scoped `grep`.
-- [ ] Enforce existing path safety rules.
-- [ ] Log tool calls as artifacts.
+- [x] Add tool interface for repo operations.
+- [x] Implement scoped `list_files`.
+- [x] Implement scoped `read_file`.
+- [x] Implement scoped `grep`.
+- [x] Enforce existing path safety rules.
+- [x] Log tool calls as artifacts.
 
 ## Phase 26: Planner Code-Discovery Support
 
-- [ ] Teach planner prompt to request needed code context.
-- [ ] Add structured planner output for lookup requests.
-- [ ] Execute requested lookup tools.
-- [ ] Save `files-inspected.md`.
-- [ ] Re-run planner with retrieved context.
+- [x] Teach planner prompt to request needed code context.
+- [x] Add structured planner output for lookup requests.
+- [x] Execute requested lookup tools.
+- [x] Save `files-inspected.md`.
+- [x] Re-run planner with retrieved context.
 
 ## Phase 27: Context Pack Builder
 
-- [ ] Add `repo_context` stage.
-- [ ] Generate `context-pack.md`.
-- [ ] Include task, acceptance criteria, relevant files, snippets, and constraints.
-- [ ] Add line-numbered excerpts.
-- [ ] Add context-size caps.
+- [x] Add `repo_context` stage.
+- [x] Generate `context-pack.md`.
+- [x] Include task, acceptance criteria, relevant files, snippets, and constraints.
+- [x] Add line-numbered excerpts.
+- [x] Add context-size caps.
 
 ## Phase 28: Project Context Chart MVP
 

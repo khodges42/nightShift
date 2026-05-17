@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
+import os
 from pathlib import Path
 import subprocess
 import time
+from urllib import request
+from urllib.error import URLError
 
 from .artifacts import ArtifactStore
 from .config import AgentConfig, StageConfig
 from .errors import AgentError, SafetyError
+from .runlog import NullRunLogger, RunLogger
 from .safety import resolve_inside_root, resolve_project_root
 from .stages import StageResult, StageStatus
 from .tasks import Task
@@ -43,11 +48,13 @@ class AgentExecutor:
         agents: dict[str, AgentConfig],
         artifacts: ArtifactStore,
         timeout_seconds: int = DEFAULT_AGENT_TIMEOUT_SECONDS,
+        logger: RunLogger | None = None,
     ) -> None:
         self.project_root = resolve_project_root(project_root)
         self.agents = agents
         self.artifacts = artifacts
         self.timeout_seconds = timeout_seconds
+        self.logger = logger or NullRunLogger()
 
     def run_stage(
         self,
@@ -64,7 +71,7 @@ class AgentExecutor:
         agent = self.agents.get(stage.agent)
         if agent is None:
             raise AgentError(f"Agent error: unknown agent '{stage.agent}' for stage '{stage.id}'.")
-        if agent.backend not in {"command", "ollama"}:
+        if agent.backend not in {"command", "ollama", "openai_compatible"}:
             raise AgentError(
                 f"Agent error: agent '{agent.id}' uses unsupported backend '{agent.backend}'."
             )
@@ -72,6 +79,10 @@ class AgentExecutor:
             raise AgentError(f"Agent error: command backend agent '{agent.id}' has no command.")
         if agent.backend == "ollama" and not agent.model:
             raise AgentError(f"Agent error: ollama backend agent '{agent.id}' has no model.")
+        if agent.backend == "openai_compatible" and not agent.model:
+            raise AgentError(f"Agent error: openai_compatible backend agent '{agent.id}' has no model.")
+        if agent.backend == "openai_compatible" and not agent.base_url:
+            raise AgentError(f"Agent error: openai_compatible backend agent '{agent.id}' has no base_url.")
 
         system_prompt = self._read_system_prompt(agent)
         prompt = build_prompt_bundle(
@@ -84,10 +95,37 @@ class AgentExecutor:
             retry_notes=retry_notes or [],
             retry_context=retry_context,
         )
+        self.logger.event(
+            "agent.start",
+            "Starting agent",
+            stage_id=stage.id,
+            agent_id=agent.id,
+            backend=agent.backend,
+            model=agent.model,
+            temperature=agent.temperature,
+        )
         invocation = self._invoke(agent, prompt)
+        self.logger.event(
+            "agent.finish",
+            "Finished agent",
+            stage_id=stage.id,
+            agent_id=agent.id,
+            backend=agent.backend,
+            exit_code=invocation.exit_code,
+            duration=f"{invocation.duration_seconds:.3f}s",
+            timed_out=str(invocation.timed_out).lower(),
+        )
         output_filename = stage.output or f"{stage.id}.md"
         output = format_agent_invocation(stage.id, invocation)
         output_path = self.artifacts.write_stage_output(task.id, output_filename, output)
+        self.logger.event(
+            "artifact.write",
+            "Wrote agent artifact",
+            stage_id=stage.id,
+            task_id=task.id,
+            agent_id=agent.id,
+            artifact_path=output_path.relative_to(self.project_root),
+        )
 
         if invocation.timed_out:
             status: StageStatus = "fail"
@@ -135,6 +173,8 @@ class AgentExecutor:
     def _invoke(self, agent: AgentConfig, prompt: str) -> AgentInvocation:
         if agent.backend == "ollama":
             return self._invoke_ollama(agent, prompt)
+        if agent.backend == "openai_compatible":
+            return self._invoke_openai_compatible(agent, prompt)
         return self._invoke_command(agent, prompt)
 
     def _invoke_command(self, agent: AgentConfig, prompt: str) -> AgentInvocation:
@@ -180,12 +220,15 @@ class AgentExecutor:
         if not agent.model:
             raise AgentError(f"Agent error: ollama backend agent '{agent.id}' has no model.")
         command = f"ollama run {agent.model}"
+        prompt_input = prompt
+        if agent.temperature is not None:
+            prompt_input = f"/set parameter temperature {agent.temperature}\n{prompt}"
         started = time.monotonic()
         try:
             completed = subprocess.run(
                 ["ollama", "run", agent.model],
                 cwd=self.project_root,
-                input=prompt,
+                input=prompt_input,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -196,7 +239,7 @@ class AgentExecutor:
             return AgentInvocation(
                 agent_id=agent.id,
                 command=command,
-                prompt=prompt,
+                prompt=prompt_input,
                 exit_code=completed.returncode,
                 stdout=_coerce_output(completed.stdout),
                 stderr=_coerce_output(completed.stderr),
@@ -207,7 +250,7 @@ class AgentExecutor:
             return AgentInvocation(
                 agent_id=agent.id,
                 command=command,
-                prompt=prompt,
+                prompt=prompt_input,
                 exit_code=127,
                 stdout="",
                 stderr=str(exc),
@@ -218,12 +261,69 @@ class AgentExecutor:
             return AgentInvocation(
                 agent_id=agent.id,
                 command=command,
-                prompt=prompt,
+                prompt=prompt_input,
                 exit_code=-1,
                 stdout=_coerce_output(exc.stdout),
                 stderr=_coerce_output(exc.stderr),
                 duration_seconds=duration,
                 timed_out=True,
+            )
+
+    def _invoke_openai_compatible(self, agent: AgentConfig, prompt: str) -> AgentInvocation:
+        if not agent.model or not agent.base_url:
+            raise AgentError(f"Agent error: openai_compatible backend agent '{agent.id}' is incomplete.")
+        url = agent.base_url.rstrip("/") + "/chat/completions"
+        command = f"POST {url}"
+        body: dict[str, object] = {
+            "model": agent.model,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if agent.temperature is not None:
+            body["temperature"] = agent.temperature
+        headers = {"Content-Type": "application/json"}
+        api_key_env = agent.api_key_env or "OPENAI_API_KEY"
+        api_key = os.environ.get(api_key_env)
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        started = time.monotonic()
+        try:
+            payload = json.dumps(body).encode("utf-8")
+            req = request.Request(url, data=payload, headers=headers, method="POST")
+            with request.urlopen(req, timeout=self.timeout_seconds) as response:
+                raw = response.read().decode("utf-8", errors="replace")
+            duration = time.monotonic() - started
+            return AgentInvocation(
+                agent_id=agent.id,
+                command=command,
+                prompt=prompt,
+                exit_code=0,
+                stdout=_extract_openai_content(raw),
+                stderr="",
+                duration_seconds=duration,
+            )
+        except TimeoutError:
+            duration = time.monotonic() - started
+            return AgentInvocation(
+                agent_id=agent.id,
+                command=command,
+                prompt=prompt,
+                exit_code=-1,
+                stdout="",
+                stderr="Request timed out.",
+                duration_seconds=duration,
+                timed_out=True,
+            )
+        except (OSError, URLError) as exc:
+            duration = time.monotonic() - started
+            return AgentInvocation(
+                agent_id=agent.id,
+                command=command,
+                prompt=prompt,
+                exit_code=1,
+                stdout="",
+                stderr=str(exc),
+                duration_seconds=duration,
             )
 
 
@@ -294,6 +394,20 @@ def _coerce_output(value: str | bytes | None) -> str:
     return value
 
 
+def _extract_openai_content(raw: str) -> str:
+    try:
+        data = json.loads(raw)
+        choices = data.get("choices", [])
+        if choices:
+            message = choices[0].get("message", {})
+            content = message.get("content")
+            if isinstance(content, str):
+                return content
+    except (json.JSONDecodeError, AttributeError):
+        pass
+    return raw
+
+
 def output_contract_for(stage: StageConfig) -> str:
     if stage.type in {"agent_review", "review"}:
         return "\n".join(
@@ -303,6 +417,20 @@ def output_contract_for(stage: StageConfig) -> str:
                 "reason: <short explanation>",
                 "next_stage: <optional stage id>",
                 "context_update: <compact useful note>",
+            ]
+        )
+    if stage.type == "agent" and ("plan" in stage.id.lower() or stage.agent == "planner"):
+        return "\n".join(
+            [
+                "Write the requested stage output in concise markdown.",
+                "",
+                "If you need repository context before finalizing the plan, include:",
+                "lookup_requests:",
+                "- tool: list_files | read_file | grep",
+                "  path: <relative path>",
+                "  pattern: <glob for list_files or regex for grep>",
+                "",
+                "NightShift will run these read-only lookup tools, save files-inspected.md, and re-run this planner stage with the retrieved context.",
             ]
         )
     return "Write the requested stage output in concise markdown."

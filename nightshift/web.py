@@ -7,6 +7,7 @@ from html import escape
 from pathlib import Path
 
 from .errors import NightShiftError
+from .runlog import tail_lines
 
 
 @dataclass(frozen=True)
@@ -14,6 +15,7 @@ class RunInfo:
     name: str
     path: Path
     summary: str
+    log_tail: tuple[str, ...] = ()
 
 
 def list_runs(artifact_dir: str | Path) -> list[RunInfo]:
@@ -24,7 +26,14 @@ def list_runs(artifact_dir: str | Path) -> list[RunInfo]:
     for path in sorted((item for item in runs_dir.iterdir() if item.is_dir()), reverse=True):
         summary_path = path / "run-summary.md"
         summary = summary_path.read_text(encoding="utf-8") if summary_path.exists() else "No run summary yet."
-        runs.append(RunInfo(name=path.name, path=path, summary=summary))
+        runs.append(
+            RunInfo(
+                name=path.name,
+                path=path,
+                summary=summary,
+                log_tail=tuple(tail_lines(path / "run.log", limit=100)),
+            )
+        )
     return runs
 
 
@@ -50,6 +59,10 @@ def render_dashboard(artifact_dir: str | Path) -> str:
                 f"<section><h2>{escape(run.name)}</h2>",
                 "<pre>",
                 escape(run.summary),
+                "</pre>",
+                "<h3>Log Tail</h3>",
+                "<pre>",
+                escape("\n".join(run.log_tail) if run.log_tail else "No run log yet."),
                 "</pre>",
                 "</section>",
             ]

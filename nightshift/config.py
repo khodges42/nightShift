@@ -43,6 +43,9 @@ class AgentConfig:
     system_prompt: Path
     model: str | None = None
     role: str | None = None
+    temperature: float | None = None
+    base_url: str | None = None
+    api_key_env: str | None = None
 
 
 @dataclass(frozen=True)
@@ -83,7 +86,7 @@ class NightShiftConfig:
 
 AGENT_STAGE_TYPES = {"agent", "agent_review", "review"}
 COMMAND_STAGE_TYPES = {"command"}
-SUPPORTED_STAGE_TYPES = AGENT_STAGE_TYPES | COMMAND_STAGE_TYPES | {"summarize"}
+SUPPORTED_STAGE_TYPES = AGENT_STAGE_TYPES | COMMAND_STAGE_TYPES | {"repo_context", "summarize"}
 
 
 def load_config(path: str | Path = "nightshift.yaml") -> NightShiftConfig:
@@ -181,10 +184,20 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
         backend = _require_string(agent_raw, "backend", f"agents.{agent_id}")
         command = _optional_string(agent_raw.get("command"), f"agents.{agent_id}.command")
         model = _optional_string(agent_raw.get("model"), f"agents.{agent_id}.model")
-        if backend not in {"command", "ollama"}:
+        base_url = _optional_string(agent_raw.get("base_url"), f"agents.{agent_id}.base_url")
+        api_key_env = _optional_string(agent_raw.get("api_key_env"), f"agents.{agent_id}.api_key_env")
+        temperature = _optional_float_or_none(
+            agent_raw.get("temperature"),
+            f"agents.{agent_id}.temperature",
+        )
+        if temperature is not None and temperature < 0:
+            raise ConfigError(
+                f"Config error: agents.{agent_id}.temperature must be zero or greater."
+            )
+        if backend not in {"command", "ollama", "openai_compatible"}:
             raise ConfigError(
                 f"Config error: agent '{agent_id}' uses unsupported backend '{backend}'. "
-                "Supported backends: command, ollama."
+                "Supported backends: command, ollama, openai_compatible."
             )
         if backend == "command" and command is None:
             raise ConfigError(
@@ -194,6 +207,14 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
             raise ConfigError(
                 f"Config error: ollama backend agent '{agent_id}' must define model."
             )
+        if backend == "openai_compatible" and model is None:
+            raise ConfigError(
+                f"Config error: openai_compatible backend agent '{agent_id}' must define model."
+            )
+        if backend == "openai_compatible" and base_url is None:
+            raise ConfigError(
+                f"Config error: openai_compatible backend agent '{agent_id}' must define base_url."
+            )
         system_prompt = Path(_require_string(agent_raw, "system_prompt", f"agents.{agent_id}"))
         agents[str(agent_id)] = AgentConfig(
             id=str(agent_id),
@@ -202,6 +223,9 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
             system_prompt=system_prompt,
             model=model,
             role=_optional_string(agent_raw.get("role"), f"agents.{agent_id}.role"),
+            temperature=temperature,
+            base_url=base_url,
+            api_key_env=api_key_env,
         )
 
     experiment_raw = raw.get("experiment", {})
@@ -444,6 +468,8 @@ def _parse_scalar(value: str) -> Any:
         return None
     if re.fullmatch(r"-?\d+", value):
         return int(value)
+    if re.fullmatch(r"-?(\d+\.\d*|\d*\.\d+)", value):
+        return float(value)
     if (value.startswith('"') and value.endswith('"')) or (
         value.startswith("'") and value.endswith("'")
     ):
@@ -490,6 +516,14 @@ def _optional_int_or_none(value: Any, context: str) -> int | None:
     if value is None:
         return None
     return _optional_int(value, context)
+
+
+def _optional_float_or_none(value: Any, context: str) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ConfigError(f"Config error: '{context}' must be a number when set.")
+    return float(value)
 
 
 def _string_tuple(value: Any, context: str) -> tuple[str, ...]:

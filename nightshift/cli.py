@@ -10,6 +10,7 @@ from .config import validate_config
 from .errors import NightShiftError
 from .init import init_project
 from .pipeline import PipelineRunner
+from .runlog import RunLogger
 from .status import build_status, format_status
 from .tasks import (
     ensure_dependencies_satisfied,
@@ -80,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
             validate_task_dependencies(tasks)
             if args.all and args.task:
                 parser.error("run accepts either --all or --task, not both.")
-            runner = PipelineRunner(config)
+            runner = PipelineRunner(config, logger=RunLogger(console=print))
             if args.all:
                 selected = [task for task in tasks if not task.completed]
                 result = runner.run_tasks(selected)

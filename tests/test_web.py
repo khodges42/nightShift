@@ -19,14 +19,23 @@ class WebDashboardTests(unittest.TestCase):
             artifacts = ArtifactStore(root, ".nightshift", run_id="test-run")
             artifacts.initialize_run()
             artifacts.run_summary_path.write_text("# Summary\n\nok", encoding="utf-8")
+            artifacts.run_log_path.write_text(
+                "\n".join(f"line {index}" for index in range(120)),
+                encoding="utf-8",
+            )
 
             runs = list_runs(root / ".nightshift")
             content = read_artifact(root / ".nightshift" / "runs" / "test-run", "run-summary.md")
             escaped = read_artifact(root / ".nightshift" / "runs" / "test-run", "../project-context.md")
+            dashboard = render_dashboard(root / ".nightshift")
 
             self.assertEqual(len(runs), 1)
+            self.assertEqual(len(runs[0].log_tail), 100)
             self.assertIn("ok", content)
             self.assertIn("escapes", escaped)
+            self.assertIn("Log Tail", dashboard)
+            self.assertIn("line 119", dashboard)
+            self.assertNotIn("line 19\n", dashboard)
 
 
 if __name__ == "__main__":

@@ -230,6 +230,79 @@ Acceptance Criteria:
             self.assertEqual(result.status, "failed")
             self.assertEqual(result.task_results[0].status, "blocked")
 
+    def test_run_writes_operational_log(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            stages = (StageConfig(id="plan", type="agent", agent="planner", output="plan.md"),)
+            artifacts = ArtifactStore(root, ".nightshift", run_id="test-run")
+            config = make_config(root, stages)
+            runner = PipelineRunner(config, artifacts)
+            task = parse_tasks(TASK_MD)[0]
+
+            runner.run_task(task)
+
+            log = (root / ".nightshift" / "runs" / "test-run" / "run.log").read_text(encoding="utf-8")
+            self.assertIn("task.start", log)
+            self.assertIn("stage.start", log)
+            self.assertIn("agent.finish", log)
+
+    def test_planner_lookup_requests_write_files_inspected_and_rerun(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            (root / "target.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / "fake_planner.py").write_text(
+                "\n".join(
+                    [
+                        "import sys",
+                        "prompt = sys.stdin.read()",
+                        "if 'repo_lookup_results' in prompt:",
+                        "    print('final plan with context')",
+                        "else:",
+                        "    print('lookup_requests:')",
+                        "    print('- tool: read_file')",
+                        "    print('  path: target.py')",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            stages = (StageConfig(id="plan", type="agent", agent="planner", output="plan.md"),)
+            config = make_config(root, stages)
+            config.agents["planner"] = AgentConfig(
+                id="planner",
+                backend="command",
+                command="python fake_planner.py",
+                system_prompt=Path("planner.md"),
+            )
+            runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+            task = parse_tasks(TASK_MD)[0]
+
+            result = runner.run_task(task)
+
+            task_dir = root / ".nightshift" / "runs" / "test-run" / "tasks" / task.id
+            self.assertEqual(result.status, "complete")
+            self.assertTrue((task_dir / "files-inspected.md").exists())
+            self.assertIn("1: VALUE = 1", (task_dir / "files-inspected.md").read_text(encoding="utf-8"))
+            self.assertIn("final plan with context", (task_dir / "plan.md").read_text(encoding="utf-8"))
+
+    def test_repo_context_stage_writes_context_pack(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            (root / "app.py").write_text("def run_pipeline():\n    return True\n", encoding="utf-8")
+            stages = (StageConfig(id="context", type="repo_context", output="context-pack.md"),)
+            config = make_config(root, stages)
+            runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+            task = parse_tasks(TASK_MD)[0]
+
+            result = runner.run_task(task)
+
+            pack = root / ".nightshift" / "runs" / "test-run" / "tasks" / task.id / "context-pack.md"
+            self.assertEqual(result.status, "complete")
+            self.assertIn("Context Pack", pack.read_text(encoding="utf-8"))
+            self.assertIn("app.py", pack.read_text(encoding="utf-8"))
+
 
 def _write_common_files(root: Path) -> None:
     (root / "nightshift.yaml").write_text("project:\n  name: test\n", encoding="utf-8")

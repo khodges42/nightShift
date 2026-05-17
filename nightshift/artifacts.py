@@ -39,6 +39,8 @@ class ArtifactStore:
         self.project_context_path = self.artifact_root / "project-context.md"
         self.run_summary_path = self.run_dir / "run-summary.md"
         self.config_snapshot_path = self.run_dir / "config.snapshot.yaml"
+        self.run_log_path = self.run_dir / "run.log"
+        self.aggregate_log_path = self.artifact_root / "nightshift.log"
 
     @classmethod
     def from_config(cls, config: NightShiftConfig, run_id: str | None = None) -> "ArtifactStore":
