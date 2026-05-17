@@ -547,6 +547,45 @@ Acceptance Criteria:
             self.assertFalse((task_dir / "normalized.patch").exists())
             self.assertFalse((task_dir / "patch-validation.md").exists())
 
+    def test_file_writer_invalid_output_gets_strict_rerun(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            (root / "app.py").write_text("old\n", encoding="utf-8")
+            (root / "fake_writer.py").write_text(
+                "\n".join(
+                    [
+                        "import sys",
+                        "prompt = sys.stdin.read()",
+                        "if 'Previous file_writer output was invalid' not in prompt:",
+                        "    print('lookup failed')",
+                        "else:",
+                        "    print('```file:app.py')",
+                        "    print('new')",
+                        "    print('```')",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            stages = (
+                StageConfig(id="write", type="file_writer", agent="writer"),
+                StageConfig(id="validate", type="patch_validator"),
+            )
+            config = make_config(root, stages)
+            config.agents["writer"] = AgentConfig(
+                id="writer",
+                backend="command",
+                command="python fake_writer.py",
+                system_prompt=Path("planner.md"),
+            )
+            runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+
+            result = runner.run_task(parse_tasks(TASK_MD)[0])
+
+            patch = root / ".nightshift" / "runs" / "test-run" / "tasks" / "TASK-001" / "proposed.patch"
+            self.assertEqual(result.status, "complete")
+            self.assertIn("+new", patch.read_text(encoding="utf-8"))
+
     def test_patch_validator_rejects_unsafe_patch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

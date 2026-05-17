@@ -29,6 +29,18 @@ class ReportGeneratorTests(unittest.TestCase):
             reporter = ReportGenerator(root, artifacts)
             task = parse_tasks(TASK_MD)[0]
             context_out = artifacts.write_stage_output(task.id, "context-out.md", "# Context Out\n")
+            artifacts.run_log_path.write_text(
+                "\n".join(
+                    [
+                        "2026-05-17T00:00:00Z | stage.start | Starting stage | stage_id=plan | stage_type=agent",
+                        "2026-05-17T00:00:01Z | tool.call | Running repo lookup tool | path=. | pattern=def parse\\( | tool=grep",
+                        "2026-05-17T00:00:02Z | stage.start | Starting stage | stage_id=implement | stage_type=file_writer",
+                        "2026-05-17T00:00:03Z | tool.call | Running repo lookup tool | path=lisp.py | tool=read_file",
+                        "2026-05-17T00:00:04Z | command.start | Starting command | command=python -m unittest | stage_id=test",
+                    ]
+                ),
+                encoding="utf-8",
+            )
 
             report = reporter.write_reports(
                 task,
@@ -53,7 +65,11 @@ class ReportGeneratorTests(unittest.TestCase):
             self.assertIn("Retry count: 1", report.final_notes_path.read_text(encoding="utf-8"))
             self.assertIn("test", report.stage_results_path.read_text(encoding="utf-8"))
             self.assertIn("Final notes", report.run_summary_path.read_text(encoding="utf-8"))
-            self.assertIn("Tests reported", report.devlog_path.read_text(encoding="utf-8"))
+            devlog = report.devlog_path.read_text(encoding="utf-8")
+            self.assertIn("Tests reported", devlog)
+            self.assertIn("Planner: searched", devlog)
+            self.assertIn("Implementer: read `lisp.py`", devlog)
+            self.assertIn("test: ran `python -m unittest`", devlog)
 
 
 if __name__ == "__main__":

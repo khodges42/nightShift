@@ -596,49 +596,83 @@ class PipelineRunner:
             )
             raw_output = self._read_output(result.output_path)
             stdout = extract_agent_stdout(raw_output)
-        try:
-            updates = parse_file_updates(stdout)
-            patch = generate_patch_from_file_updates(
-                updates,
-                self.config.project.root,
-                self.config.safety,
-                forbidden_paths=stage.forbidden_paths or DEFAULT_FORBIDDEN_PATHS,
-            )
-            patch_reason = "Deterministic patch written from file blocks."
-            log_message = "Wrote deterministic patch from file blocks"
-        except PipelineError as exc:
+        invalid_rerun_done = False
+        while True:
             try:
-                patch = normalize_patch_text(stdout)
-            except PipelineError:
-                summary_filename = "implementation-summary.md" if retry_count == 0 else f"repair-summary-{retry_count}.md"
-                reason = str(exc)
-                if "generated patch has no changes" in reason:
-                    next_stage = self._stage_after_patch_flow(stage.id)
-                    reason = self._no_changes_reason(retry_count)
-                    summary_path = self.artifacts.write_stage_output(
+                updates = parse_file_updates(stdout)
+                patch = generate_patch_from_file_updates(
+                    updates,
+                    self.config.project.root,
+                    self.config.safety,
+                    forbidden_paths=stage.forbidden_paths or DEFAULT_FORBIDDEN_PATHS,
+                )
+                patch_reason = "Deterministic patch written from file blocks."
+                log_message = "Wrote deterministic patch from file blocks"
+                break
+            except PipelineError as exc:
+                if (
+                    "no file blocks found" in str(exc)
+                    and "diff --git " not in stdout
+                    and not invalid_rerun_done
+                ):
+                    invalid_rerun_done = True
+                    self.logger.event(
+                        "agent.rerun",
+                        "Re-running file writer after invalid output",
+                        stage_id=stage.id,
+                        task_id=task.id,
+                    )
+                    rerun_outputs = dict(enriched_outputs)
+                    rerun_outputs["invalid_file_writer_output"] = stdout
+                    strict_notes = [
+                        *retry_notes,
+                        "Previous file_writer output was invalid. Return complete file blocks now. Do not output lookup_requests, prose, or 'lookup failed'.",
+                    ]
+                    result = self.agent_executor.run_stage(
+                        agent_stage,
+                        task,
+                        rerun_outputs,
+                        strict_notes,
+                        project_context=context.project_context,
+                        task_context=context.task_context,
+                        retry_context="\n".join(f"- {note}" for note in strict_notes),
+                    )
+                    raw_output = self._read_output(result.output_path)
+                    stdout = extract_agent_stdout(raw_output)
+                    continue
+                try:
+                    patch = normalize_patch_text(stdout)
+                except PipelineError:
+                    summary_filename = "implementation-summary.md" if retry_count == 0 else f"repair-summary-{retry_count}.md"
+                    reason = str(exc)
+                    if "generated patch has no changes" in reason:
+                        next_stage = self._stage_after_patch_flow(stage.id)
+                        reason = self._no_changes_reason(retry_count)
+                        summary_path = self.artifacts.write_stage_output(
+                            task.id,
+                            summary_filename,
+                            f"# Implementation Summary\n\nStatus: pass\nReason: {reason}\n",
+                        )
+                        return StageResult(
+                            stage.id,
+                            "pass",
+                            reason,
+                            output_path=result.output_path,
+                            next_stage=next_stage,
+                            context_update=(
+                                f"Implementation summary: "
+                                f"{summary_path.relative_to(self.config.project.root).as_posix()}"
+                            ),
+                        )
+                    self.artifacts.write_stage_output(
                         task.id,
                         summary_filename,
-                        f"# Implementation Summary\n\nStatus: pass\nReason: {reason}\n",
+                        f"# Implementation Summary\n\nStatus: fail\nReason: {reason}\n",
                     )
-                    return StageResult(
-                        stage.id,
-                        "pass",
-                        reason,
-                        output_path=result.output_path,
-                        next_stage=next_stage,
-                        context_update=(
-                            f"Implementation summary: "
-                            f"{summary_path.relative_to(self.config.project.root).as_posix()}"
-                        ),
-                    )
-                self.artifacts.write_stage_output(
-                    task.id,
-                    summary_filename,
-                    f"# Implementation Summary\n\nStatus: fail\nReason: {reason}\n",
-                )
-                return StageResult(stage.id, "fail", reason, output_path=result.output_path)
-            patch_reason = "Fallback patch written from unified diff output."
-            log_message = "Wrote fallback patch from unified diff output"
+                    return StageResult(stage.id, "fail", reason, output_path=result.output_path)
+                patch_reason = "Fallback patch written from unified diff output."
+                log_message = "Wrote fallback patch from unified diff output"
+                break
         patch_filename = "repair-{0}.patch".format(retry_count) if retry_count else (stage.output or "proposed.patch")
         summary_filename = "implementation-summary.md" if retry_count == 0 else f"repair-summary-{retry_count}.md"
         proposed_path = self.artifacts.write_stage_output(task.id, patch_filename, patch)

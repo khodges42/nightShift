@@ -55,6 +55,20 @@ NightShift does not push branches, deploy software, run unbounded task swarms, o
 
 ## Install
 
+Repo setup scripts can install NightShift in editable mode, check for Ollama, and offer to add the Python scripts directory to PATH.
+
+Windows PowerShell:
+
+```powershell
+.\setup.ps1
+```
+
+macOS/Linux:
+
+```bash
+sh ./setup.sh
+```
+
 Development install:
 
 ```bash
@@ -73,7 +87,7 @@ NightShift uses the Python standard library for runtime behavior where practical
 
 Start with the [Quickstart](QUICKSTART.md). It uses deterministic fake agents so you can verify lookup, context generation, patch validation, patch apply, tests, and artifacts without installing a model.
 
-After that works, continue with [Tutorial 01: Running NightShift With Real Local Models](examples/tutorial/01-intro.md). It swaps the fake agents for Ollama-backed agents such as `qwen2.5-coder:14b` and walks through dry-run and apply-mode patch generation.
+After that works, continue with [Tutorial 01: Building A Small Imageboard With Real Local Models](examples/tutorial/01-imageboard/README.md). It swaps the fake agents for Ollama-backed agents such as `qwen2.5-coder:14b` and walks through a small Flask/SQLite project with ordinary web-app tasks.
 
 ### Quickstart Commands
 
@@ -315,7 +329,8 @@ python -m compileall nightshift tests
 Additional docs:
 
 - [Quickstart](QUICKSTART.md)
-- [Tutorial: running real local models](examples/tutorial/01-intro.md)
+- [Tutorial 01: imageboard with real local models](examples/tutorial/01-imageboard/README.md)
+- [Tutorial 02: Lisp with real local models](examples/tutorial/02-lisp/README.md)
 - [Config reference](docs/config-reference.md)
 - [Artifact review workflow](docs/artifact-review.md)
 - [Troubleshooting](docs/troubleshooting.md)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 import subprocess
 
 from .artifacts import ArtifactStore
@@ -87,6 +88,9 @@ class ReportGenerator:
                 retry_count=retry_count,
                 stage_results=stage_results,
                 modified_files=modified_files,
+                run_log=self.artifacts.run_log_path.read_text(encoding="utf-8", errors="replace")
+                if self.artifacts.run_log_path.exists()
+                else "",
             ),
             encoding="utf-8",
         )
@@ -225,6 +229,7 @@ def format_devlog(
     retry_count: int,
     stage_results: list[StageResult],
     modified_files: list[str],
+    run_log: str = "",
 ) -> str:
     lines = [
         "# Devlog",
@@ -236,6 +241,9 @@ def format_devlog(
         f"Outcome: {reason}",
         "",
     ]
+    timeline = _format_devlog_timeline(run_log)
+    if timeline:
+        lines.extend(["## Timeline", "", *timeline, ""])
     stage_titles = {
         "agent": "Agent",
         "agent_review": "Reviewer",
@@ -274,6 +282,63 @@ def format_devlog(
         ]
     )
     return "\n".join(lines)
+
+
+def _format_devlog_timeline(run_log: str) -> list[str]:
+    current_stage = ""
+    lines: list[str] = []
+    for raw_line in run_log.splitlines():
+        event, fields = _parse_run_log_line(raw_line)
+        if not event:
+            continue
+        stage_id = fields.get("stage_id") or current_stage
+        if event == "stage.start":
+            current_stage = fields.get("stage_id", current_stage)
+            lines.append(f"- {stage_id}: started {fields.get('stage_type', 'stage')}.")
+        elif event == "agent.rerun":
+            lines.append(f"- {stage_id}: reran the agent with extra context.")
+        elif event == "tool.call":
+            actor = _devlog_stage_label(stage_id or current_stage or "repo lookup", {})
+            tool = fields.get("tool", "tool")
+            path = fields.get("path", ".")
+            pattern = fields.get("pattern")
+            if tool == "grep":
+                lines.append(f"- {actor}: searched `{path}` for `{pattern or ''}`.")
+            elif tool == "read_file":
+                lines.append(f"- {actor}: read `{path}`.")
+            elif tool == "list_files":
+                lines.append(f"- {actor}: listed files under `{path}`.")
+            else:
+                lines.append(f"- {actor}: ran repo lookup `{tool}` on `{path}`.")
+        elif event == "artifact.write":
+            artifact = fields.get("artifact_path")
+            if artifact:
+                actor = _devlog_stage_label(stage_id or current_stage or "artifact", {})
+                lines.append(f"- {actor}: wrote `{artifact}`.")
+        elif event == "command.start":
+            lines.append(f"- {stage_id}: ran `{fields.get('command', 'command')}`.")
+        elif event == "command.finish":
+            lines.append(f"- {stage_id}: command exited with code {fields.get('exit_code', '?')}.")
+        elif event == "stage.next":
+            lines.append(f"- {stage_id}: skipped ahead to `{fields.get('next_stage', '')}`.")
+        elif event == "stage.retry":
+            lines.append(f"- {stage_id}: requested retry to `{fields.get('next_stage', '')}`.")
+        elif event == "stage.finish":
+            lines.append(f"- {stage_id}: finished with {fields.get('status', 'unknown')} - {fields.get('reason', '')}")
+    return lines
+
+
+def _parse_run_log_line(line: str) -> tuple[str, dict[str, str]]:
+    parts = [part.strip() for part in line.split(" | ")]
+    if len(parts) < 3:
+        return "", {}
+    event = parts[1]
+    fields: dict[str, str] = {}
+    for part in parts[3:]:
+        match = re.match(r"([^=]+)=(.*)", part)
+        if match:
+            fields[match.group(1).strip()] = match.group(2).strip()
+    return event, fields
 
 
 def _devlog_stage_label(stage_id: str, stage_titles: dict[str, str]) -> str:

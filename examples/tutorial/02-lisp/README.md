@@ -1,4 +1,4 @@
-# Tutorial 01: Running NightShift With Real Local Models
+# Tutorial 02: Running NightShift With Real Local Models On Tiny Lisp
 
 This tutorial starts after the quickstart. The quickstart uses fake command agents so you can verify the pipeline deterministically. Here, you will replace those fake agents with real Ollama-backed agents and let a model generate a real patch.
 

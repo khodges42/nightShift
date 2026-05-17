@@ -144,33 +144,39 @@ class CommandExecutor:
                 env.setdefault("PATH", os.environ["PATH"])
 
         started = time.monotonic()
+        process = subprocess.Popen(
+            args,
+            cwd=cwd,
+            shell=shell,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+        )
         try:
-            completed = subprocess.run(
-                args,
-                cwd=cwd,
-                shell=shell,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=timeout,
-                env=env,
-            )
+            stdout, stderr = process.communicate(timeout=timeout)
             duration = time.monotonic() - started
             return CommandRun(
                 command=normalized,
-                exit_code=completed.returncode,
-                stdout=_coerce_output(completed.stdout),
-                stderr=_coerce_output(completed.stderr),
+                exit_code=process.returncode if process.returncode is not None else -1,
+                stdout=_coerce_output(stdout),
+                stderr=_coerce_output(stderr),
                 duration_seconds=duration,
             )
-        except subprocess.TimeoutExpired as exc:
+        except subprocess.TimeoutExpired:
+            _kill_process_tree(process)
+            try:
+                stdout, stderr = process.communicate(timeout=2)
+            except subprocess.TimeoutExpired:
+                stdout, stderr = "", "Timed out while collecting process output after termination."
             duration = time.monotonic() - started
             return CommandRun(
                 command=normalized,
                 exit_code=-1,
-                stdout=_coerce_output(exc.stdout),
-                stderr=_coerce_output(exc.stderr),
+                stdout=_coerce_output(stdout),
+                stderr=_coerce_output(stderr),
                 duration_seconds=duration,
                 timed_out=True,
             )
@@ -213,3 +219,16 @@ def _coerce_output(value: str | bytes | None) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
     return value
+
+
+def _kill_process_tree(process: subprocess.Popen[str]) -> None:
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        return
+    process.kill()
