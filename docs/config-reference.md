@@ -27,7 +27,8 @@ NightShift config is YAML.
 Supported backends:
 
 - `command`: runs a local command with the prompt on stdin.
-- `ollama`: runs `ollama run <model>` with the prompt on stdin.
+- `ollama`: calls the local Ollama HTTP API at `http://localhost:11434/api/generate` by default.
+- `openai_compatible`: calls a Chat Completions-compatible HTTP API.
 
 Command agent:
 
@@ -44,6 +45,7 @@ Ollama agent:
 planner:
   backend: ollama
   model: qwen2.5-coder:14b
+  base_url: http://localhost:11434
   system_prompt: agents/planner.md
 ```
 

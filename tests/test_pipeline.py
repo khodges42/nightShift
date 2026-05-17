@@ -484,7 +484,7 @@ Acceptance Criteria:
                 encoding="utf-8",
             )
             stages = (
-                StageConfig(id="write", type="code_writer", agent="writer"),
+                StageConfig(id="write", type="code_writer", agent="writer", output="proposed.patch"),
                 StageConfig(id="normalize", type="patch_normalizer"),
                 StageConfig(id="validate", type="patch_validator", on_fail="write"),
             )
@@ -506,6 +506,10 @@ Acceptance Criteria:
                 any("creates existing file" in stage.reason for stage in result.stage_results)
             )
             self.assertTrue((task_dir / "repair-1.patch").exists())
+            self.assertTrue((task_dir / "normalized.patch").exists())
+            self.assertTrue((task_dir / "normalized-1.patch").exists())
+            self.assertTrue((task_dir / "patch-validation.md").exists())
+            self.assertTrue((task_dir / "patch-validation-1.md").exists())
 
     def test_patch_apply_stage_applies_patch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -615,6 +619,10 @@ Acceptance Criteria:
             self.assertEqual((root / "app.py").read_text(encoding="utf-8"), "new\n")
             self.assertTrue((task_dir / "repair-1.patch").exists())
             self.assertTrue((task_dir / "repair-summary-1.md").exists())
+            self.assertTrue((task_dir / "normalized-1.patch").exists())
+            self.assertTrue((task_dir / "patch-validation-1.md").exists())
+            self.assertTrue((task_dir / "applied-1.patch").exists())
+            self.assertTrue((task_dir / "patch-apply-output-1.txt").exists())
 
 
 def _write_common_files(root: Path) -> None:

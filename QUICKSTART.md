@@ -83,6 +83,8 @@ tasks/TASK-001/context-out.md
 tasks/TASK-001/final-notes.md
 ```
 
+Retry attempts preserve separate artifacts with numeric suffixes, such as `repair-1.patch`, `normalized-1.patch`, `patch-validation-1.md`, `applied-1.patch`, and `patch-apply-output-1.txt`.
+
 ## Example Templates
 
 Example run files are available in `examples/templates/`.
@@ -362,5 +364,7 @@ After a run, inspect:
 .nightshift/runs/<run-id>/tasks/TASK-001/review.md
 .nightshift/runs/<run-id>/tasks/TASK-001/final-notes.md
 ```
+
+If validation or later stages retry implementation, inspect the suffixed retry artifacts too, for example `repair-1.patch` and `patch-validation-1.md`.
 
 The useful signal is whether NightShift selected the right task, respected dependencies, generated context, validated and applied a patch, ran tests, wrote artifacts, updated task completion, and produced a clear summary.

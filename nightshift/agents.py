@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 import re
 import subprocess
-import tempfile
 import time
 from urllib import request
 from urllib.error import URLError
@@ -23,7 +22,6 @@ from .tasks import Task
 
 
 DEFAULT_AGENT_TIMEOUT_SECONDS = 600
-OLLAMA_HEARTBEAT_SECONDS = 30.0
 
 
 @dataclass(frozen=True)
@@ -222,96 +220,58 @@ class AgentExecutor:
     def _invoke_ollama(self, agent: AgentConfig, prompt: str) -> AgentInvocation:
         if not agent.model:
             raise AgentError(f"Agent error: ollama backend agent '{agent.id}' has no model.")
-        command = f"ollama run {agent.model}"
-        prompt_input = prompt
+        base_url = (agent.base_url or "http://localhost:11434").rstrip("/")
+        url = base_url + "/api/generate"
+        command = f"POST {url}"
+        body: dict[str, object] = {
+            "model": agent.model,
+            "prompt": prompt,
+            "stream": False,
+        }
         if agent.temperature is not None:
-            prompt_input = f"/set parameter temperature {agent.temperature}\n{prompt}"
+            body["options"] = {"temperature": agent.temperature}
+        headers = {"Content-Type": "application/json"}
         started = time.monotonic()
         self.logger.event(
             "ollama.start",
-            "Starting Ollama model invocation",
+            "Starting Ollama HTTP model invocation",
             agent_id=agent.id,
             model=agent.model,
             timeout_seconds=self.timeout_seconds,
         )
         try:
-            with tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as stdout_file:
-                with tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as stderr_file:
-                    process = subprocess.Popen(
-                        ["ollama", "run", agent.model],
-                        cwd=self.project_root,
-                        stdin=subprocess.PIPE,
-                        stdout=stdout_file,
-                        stderr=stderr_file,
-                        text=True,
-                        encoding="utf-8",
-                        errors="replace",
-                    )
-                    assert process.stdin is not None
-                    process.stdin.write(prompt_input)
-                    process.stdin.close()
-                    last_heartbeat = started
-                    timed_out = False
-                    while process.poll() is None:
-                        now = time.monotonic()
-                        elapsed = now - started
-                        if elapsed > self.timeout_seconds:
-                            process.kill()
-                            timed_out = True
-                            break
-                        if now - last_heartbeat >= OLLAMA_HEARTBEAT_SECONDS:
-                            self.logger.event(
-                                "ollama.wait",
-                                "Ollama invocation still running",
-                                agent_id=agent.id,
-                                model=agent.model,
-                                elapsed=f"{elapsed:.0f}s",
-                            )
-                            last_heartbeat = now
-                        time.sleep(1.0)
-                    process.wait()
-                    duration = time.monotonic() - started
-                    stdout_file.seek(0)
-                    stderr_file.seek(0)
-                    stdout = stdout_file.read()
-                    stderr = stderr_file.read()
-                    if timed_out:
-                        return AgentInvocation(
-                            agent_id=agent.id,
-                            command=command,
-                            prompt=prompt_input,
-                            exit_code=-1,
-                            stdout=stdout,
-                            stderr=stderr,
-                            duration_seconds=duration,
-                            timed_out=True,
-                        )
-                    return AgentInvocation(
-                        agent_id=agent.id,
-                        command=command,
-                        prompt=prompt_input,
-                        exit_code=process.returncode or 0,
-                        stdout=stdout,
-                        stderr=stderr,
-                        duration_seconds=duration,
-                    )
-        except FileNotFoundError as exc:
+            payload = json.dumps(body).encode("utf-8")
+            req = request.Request(url, data=payload, headers=headers, method="POST")
+            with request.urlopen(req, timeout=self.timeout_seconds) as response:
+                raw = response.read().decode("utf-8", errors="replace")
             duration = time.monotonic() - started
             return AgentInvocation(
                 agent_id=agent.id,
                 command=command,
-                prompt=prompt_input,
-                exit_code=127,
-                stdout="",
-                stderr=str(exc),
+                prompt=prompt,
+                exit_code=0,
+                stdout=_extract_ollama_response(raw),
+                stderr="",
                 duration_seconds=duration,
             )
-        except OSError as exc:
+        except TimeoutError:
             duration = time.monotonic() - started
             return AgentInvocation(
                 agent_id=agent.id,
                 command=command,
-                prompt=prompt_input,
+                prompt=prompt,
+                exit_code=-1,
+                stdout="",
+                stderr="Request timed out.",
+                duration_seconds=duration,
+                timed_out=True,
+            )
+        except (OSError, URLError) as exc:
+            duration = time.monotonic() - started
+            return AgentInvocation(
+                agent_id=agent.id,
+                command=command,
+                prompt=prompt,
                 exit_code=1,
                 stdout="",
                 stderr=str(exc),
@@ -461,11 +421,22 @@ def _extract_openai_content(raw: str) -> str:
     return raw
 
 
+def _extract_ollama_response(raw: str) -> str:
+    try:
+        data = json.loads(raw)
+        response = data.get("response")
+        if isinstance(response, str):
+            return response
+    except (json.JSONDecodeError, AttributeError):
+        pass
+    return raw
+
+
 def output_contract_for(stage: StageConfig) -> str:
     if stage.type == "code_writer":
         return "\n".join(
             [
-                "Return a unified diff only, suitable for saving as proposed.patch.",
+                "Return a unified diff only, suitable for saving as proposed.patch or repair-N.patch.",
                 "Do not include prose outside the patch.",
                 "Use diff --git headers and hunk headers.",
                 "For existing files, do not use new file mode or /dev/null headers.",

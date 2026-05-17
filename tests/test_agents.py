@@ -1,5 +1,4 @@
 from pathlib import Path
-import io
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
@@ -119,27 +118,20 @@ class AgentExecutorTests(unittest.TestCase):
             task = parse_tasks(TASK_MD)[0]
             stage = StageConfig(id="plan", type="agent", agent="planner", output="plan.md")
 
-            class FakePopen:
-                def __init__(self, args, cwd=None, stdin=None, stdout=None, stderr=None, **kwargs):
-                    self.args = args
-                    self.stdin = io.StringIO()
-                    self.returncode = 0
-                    stdout.write("ollama output")
+            response = MagicMock()
+            response.__enter__.return_value.read.return_value = b'{"response":"ollama output"}'
 
-                def poll(self):
-                    return self.returncode
-
-                def wait(self):
-                    return self.returncode
-
-            with patch("nightshift.agents.subprocess.Popen", side_effect=FakePopen) as popen:
+            with patch("nightshift.agents.request.urlopen", return_value=response) as urlopen:
                 result = executor.run_stage(stage, task)
 
             self.assertEqual(result.status, "pass")
-            popen.assert_called_once()
-            self.assertEqual(popen.call_args.args[0], ["ollama", "run", "tiny-model"])
+            request_obj = urlopen.call_args.args[0]
+            body = request_obj.data.decode("utf-8")
+            self.assertIn('"model": "tiny-model"', body)
+            self.assertIn('"stream": false', body)
             output = (root / result.output_path).read_text(encoding="utf-8")
-            self.assertIn("ollama run tiny-model", output)
+            self.assertIn("POST http://localhost:11434/api/generate", output)
+            self.assertIn("ollama output", output)
 
     def test_openai_compatible_agent_sends_temperature(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

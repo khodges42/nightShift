@@ -865,7 +865,7 @@ NightShift currently provides:
 * Command, agent, agent-review, review, summarize, repo-context, code-writer, patch-normalizer, patch-validator, and patch-apply stage handling
 * Retry redirection with a configured task retry limit
 * Command-backed agents
-* Ollama-backed local model agents
+* Ollama-backed local model agents through the local HTTP API
 * OpenAI-compatible local/server model agents
 * Per-agent temperature settings
 * Scoped repo lookup tools: `list_files`, `read_file`, and `grep`
@@ -874,6 +874,7 @@ NightShift currently provides:
 * Context pack generation
 * Unified diff code-writing contract
 * Patch normalization, validation, dry-run, and apply modes
+* Per-attempt retry patch artifacts such as `repair-1.patch`, `normalized-1.patch`, and `patch-validation-1.md`
 * Test/static failure repair loops via bounded stage retries
 * Prompt bundle construction with project, task, retry, and previous-stage context
 * Prompt snapshots and run metadata for experiment comparison
@@ -1014,13 +1015,13 @@ The next important additions are:
    Move max files, max lines, forbidden paths, allowed file types, binary rejection, and protected files into a reusable project-level write policy.
 
 5. Better model backend support
-   Expand OpenAI-compatible behavior, add request metadata artifacts, support response format hints, and document local server patterns. Prefer non-terminal APIs for machine-readable model output. In particular, avoid relying on interactive CLI streaming paths such as `ollama run` when exact patch text matters; use the Ollama HTTP API or OpenAI-compatible endpoint so terminal rendering, spinners, and line-wrapping behavior cannot corrupt artifacts.
+   Expand OpenAI-compatible behavior, add request metadata artifacts, support response format hints, and document local server patterns. Machine-readable Ollama output now uses the HTTP API instead of the interactive `ollama run` terminal path; keep this non-terminal capture policy for future model backends where exact patch text matters.
 
 6. Deterministic diff generation
    Reduce direct reliance on models emitting perfect unified diffs. Add a workflow where the model returns complete file contents or a structured edit description, then NightShift writes the unified diff deterministically from before/after file snapshots. Keep the existing unified-diff contract for advanced agents, but make deterministic diff generation the preferred path for smaller local models.
 
 7. Retry artifact versioning
-   Preserve per-attempt artifacts instead of overwriting fixed filenames such as `proposed.patch`, `normalized.patch`, and `patch-validation.md`. Retry artifacts should include attempt numbers, while summary artifacts can point to the latest attempt. This makes repeated validation and repair failures diagnosable.
+   Continue improving per-attempt artifact preservation. Patch retries now preserve files such as `repair-1.patch`, `normalized-1.patch`, and `patch-validation-1.md`; future work should add richer latest-attempt indexes and dashboard navigation.
 
 8. Patch repair stage
    Add an explicit patch repair or strict normalizer stage that receives the invalid patch, validation error, and relevant source excerpts, then returns a complete replacement patch. This stage should remain bounded by strict validation and should not silently guess intent for arbitrary malformed hunks.
@@ -1042,7 +1043,7 @@ The next important additions are:
 
 Implementation note:
 
-Recent local-model patch experiments exposed repeated line-fragment artifacts where long generated lines were split and the tail was duplicated on the following line. This affected prose and unified diffs, producing malformed hunk lines that strict validation correctly rejected. Treat this as a backend/output-capture and patch-contract problem before adding editor or linter agents: remove terminal streaming from model capture, preserve retry artifacts, and prefer deterministic diff generation when exact syntax matters.
+Recent local-model patch experiments exposed repeated line-fragment artifacts where long generated lines were split and the tail was duplicated on the following line. This affected prose and unified diffs, producing malformed hunk lines that strict validation correctly rejected. Treat this as a backend/output-capture and patch-contract problem before adding editor or linter agents: avoid terminal streaming for machine output, preserve retry artifacts, and prefer deterministic diff generation when exact syntax matters.
 --- 
 
 # Appendix A: Design Decisions and Rationale

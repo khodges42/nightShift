@@ -195,9 +195,12 @@ agents:
   implementer:
     backend: ollama
     model: qwen2.5-coder:14b
+    base_url: http://localhost:11434
     temperature: 0.2
     system_prompt: agents/implementer.md
 ```
+
+The Ollama backend uses the local HTTP API instead of `ollama run`, which keeps exact patch output away from terminal rendering and line wrapping.
 
 Example OpenAI-compatible agent:
 
@@ -212,7 +215,7 @@ agents:
     system_prompt: agents/implementer.md
 ```
 
-NightShift passes prompt bundles to agents and persists stdout, stderr, exit code, duration, and prompt artifacts. Code writer agents should return unified diffs.
+NightShift passes prompt bundles to agents and persists stdout, stderr, exit code, duration, and prompt artifacts. Code writer agents should return unified diffs. On retries, patch artifacts are versioned by attempt, for example `repair-1.patch`, `normalized-1.patch`, and `patch-validation-1.md`.
 
 Review agents should emit:
 
@@ -274,10 +277,15 @@ A run creates human-readable artifacts:
           context-pack.md
           plan.md
           proposed.patch
+          repair-1.patch
           normalized.patch
+          normalized-1.patch
           patch-validation.md
+          patch-validation-1.md
           applied.patch
+          applied-1.patch
           patch-apply-output.txt
+          patch-apply-output-1.txt
           test-output.txt
           review.md
           stage-results.md

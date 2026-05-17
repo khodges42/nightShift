@@ -29,10 +29,10 @@ Install and start Ollama, then make sure the model is available:
 
 ```bash
 ollama pull qwen2.5-coder:14b
-ollama run qwen2.5-coder:14b
+ollama list
 ```
 
-Stop the interactive `ollama run` session after confirming the model responds. NightShift will invoke Ollama itself.
+Keep Ollama running. NightShift uses Ollama's local HTTP API, normally at `http://localhost:11434`, rather than the interactive `ollama run` terminal path.
 
 ## 1. Create a Scratch Target Project
 
@@ -189,6 +189,8 @@ Inspect these artifacts:
 .nightshift/runs/<run-id>/tasks/TASK-001/final-notes.md
 ```
 
+If a later stage routes back to `implement`, retry artifacts are written with attempt suffixes such as `repair-1.patch`, `normalized-1.patch`, `patch-validation-1.md`, `applied-1.patch`, and `patch-apply-output-1.txt`.
+
 In dry-run mode, the patch should be validated and checked with `git apply --check`, but files should not change.
 
 ## 5. Apply The Patch
@@ -215,6 +217,7 @@ If the model generates a valid patch, NightShift will:
 - apply the patch with `git apply`
 - run `python -m unittest discover -v`
 - retry through the implementer if the test stage fails and `max_task_retries` allows it
+- preserve per-attempt retry patch artifacts with numeric suffixes
 - mark the task complete only if the pipeline completes
 
 ## 6. Monitor From The Web Dashboard
@@ -277,13 +280,13 @@ Once you trust the workflow, consider setting `require_clean_worktree: true` in 
 
 ## Troubleshooting
 
-If Ollama is not found:
+If Ollama is unavailable:
 
 ```text
-Agent exited with code 127
+Agent exited with code 1
 ```
 
-Confirm `ollama` is installed and available on `PATH`.
+Confirm Ollama is running at the configured `base_url` and the model appears in `ollama list`.
 
 If the model returns prose instead of a patch, tighten `agents/implementer.md`. The implementation stage requires a unified diff.
 
@@ -291,8 +294,11 @@ If patch validation fails, inspect:
 
 ```text
 patch-validation.md
+patch-validation-1.md
 normalized.patch
+normalized-1.patch
 proposed.patch
+repair-1.patch
 ```
 
 If patch apply fails, inspect:

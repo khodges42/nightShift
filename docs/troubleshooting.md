@@ -18,7 +18,7 @@ If `require_clean_worktree: true`, NightShift blocks dirty repositories before c
 
 ## Ollama backend fails
 
-The `ollama` backend requires the `ollama` executable to be installed and the configured model to be available. Tests do not require Ollama.
+The `ollama` backend uses Ollama's local HTTP API, normally at `http://localhost:11434/api/generate`. Confirm Ollama is running and the configured model is available with `ollama list` or `ollama pull <model>`. Tests do not require Ollama.
 
 ## Flask dashboard fails
 

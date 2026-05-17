@@ -370,11 +370,11 @@ class PipelineRunner:
         if stage.type == "code_writer":
             return self._run_code_writer_stage(stage, task, previous_outputs, retry_notes, retry_count)
         if stage.type == "patch_normalizer":
-            return self._run_patch_normalizer_stage(stage, task, previous_outputs, retry_notes)
+            return self._run_patch_normalizer_stage(stage, task, previous_outputs, retry_notes, retry_count)
         if stage.type == "patch_validator":
-            return self._run_patch_validator_stage(stage, task, previous_outputs)
+            return self._run_patch_validator_stage(stage, task, previous_outputs, retry_count)
         if stage.type == "patch_apply":
-            return self._run_patch_apply_stage(stage, task, previous_outputs)
+            return self._run_patch_apply_stage(stage, task, previous_outputs, retry_count)
         if stage.type == "repo_context":
             output_path = self.artifacts.write_stage_output(
                 task.id,
@@ -488,7 +488,7 @@ class PipelineRunner:
                 f"# Implementation Summary\n\nStatus: fail\nReason: {exc}\n",
             )
             return StageResult(stage.id, "fail", str(exc), output_path=result.output_path)
-        patch_filename = stage.output or ("proposed.patch" if retry_count == 0 else f"repair-{retry_count}.patch")
+        patch_filename = "repair-{0}.patch".format(retry_count) if retry_count else (stage.output or "proposed.patch")
         summary_filename = "implementation-summary.md" if retry_count == 0 else f"repair-summary-{retry_count}.md"
         proposed_path = self.artifacts.write_stage_output(task.id, patch_filename, patch)
         summary_path = self.artifacts.write_stage_output(
@@ -522,6 +522,7 @@ class PipelineRunner:
         task: Task,
         previous_outputs: dict[str, str],
         retry_notes: list[str],
+        retry_count: int = 0,
     ) -> StageResult:
         source = _latest_patch_like_output(previous_outputs)
         if stage.agent is not None:
@@ -539,7 +540,11 @@ class PipelineRunner:
             patch = normalize_patch_text(source)
         except PipelineError as exc:
             return StageResult(stage.id, "fail", str(exc))
-        output_path = self.artifacts.write_stage_output(task.id, stage.output or "normalized.patch", patch)
+        output_path = self.artifacts.write_stage_output(
+            task.id,
+            _attempt_filename(stage.output or "normalized.patch", retry_count),
+            patch,
+        )
         self.logger.event(
             "artifact.write",
             "Wrote normalized patch",
@@ -559,7 +564,9 @@ class PipelineRunner:
         stage: StageConfig,
         task: Task,
         previous_outputs: dict[str, str],
+        retry_count: int = 0,
     ) -> StageResult:
+        output_filename = _attempt_filename(stage.output or "patch-validation.md", retry_count)
         source = _latest_patch_like_output(previous_outputs)
         try:
             patch = normalize_patch_text(source)
@@ -574,7 +581,7 @@ class PipelineRunner:
         except PipelineError as exc:
             output_path = self.artifacts.write_stage_output(
                 task.id,
-                stage.output or "patch-validation.md",
+                output_filename,
                 f"# Patch Validation\n\nStatus: fail\nReason: {exc}\n",
             )
             return StageResult(
@@ -585,7 +592,7 @@ class PipelineRunner:
             )
         output_path = self.artifacts.write_stage_output(
             task.id,
-            stage.output or "patch-validation.md",
+            output_filename,
             format_validation_result(result),
         )
         return StageResult(
@@ -600,7 +607,9 @@ class PipelineRunner:
         stage: StageConfig,
         task: Task,
         previous_outputs: dict[str, str],
+        retry_count: int = 0,
     ) -> StageResult:
+        output_filename = _attempt_filename(stage.output or "patch-apply-output.txt", retry_count)
         source = _latest_patch_like_output(previous_outputs)
         try:
             patch = normalize_patch_text(source)
@@ -615,7 +624,7 @@ class PipelineRunner:
         except PipelineError as exc:
             output_path = self.artifacts.write_stage_output(
                 task.id,
-                stage.output or "patch-apply-output.txt",
+                output_filename,
                 f"# Patch Apply\n\nStatus: fail\nReason: {exc}\n",
             )
             return StageResult(
@@ -625,14 +634,18 @@ class PipelineRunner:
                 output_path=str(output_path.relative_to(self.config.project.root)),
             )
 
-        applied_path = self.artifacts.write_stage_output(task.id, "applied.patch", patch)
+        applied_path = self.artifacts.write_stage_output(
+            task.id,
+            _attempt_filename("applied.patch", retry_count),
+            patch,
+        )
         write_git_artifacts(self.artifacts, task.id, "before-patch-apply")
         mode = stage.mode or "dry_run"
         apply_result = apply_patch_with_git(applied_path, self.config.project.root, mode=mode)
         write_git_artifacts(self.artifacts, task.id, "after-patch-apply")
         output_path = self.artifacts.write_stage_output(
             task.id,
-            stage.output or "patch-apply-output.txt",
+            output_filename,
             format_patch_apply_result(
                 apply_result,
                 applied_path.relative_to(self.config.project.root).as_posix(),
@@ -837,6 +850,19 @@ def _latest_patch_like_output(previous_outputs: dict[str, str]) -> str:
         if stage_id.endswith(".patch") or "diff --git " in content or "\n--- " in content:
             return content
     raise PipelineError("Patch error: no previous patch output found.")
+
+
+def _attempt_filename(filename: str, retry_count: int) -> str:
+    if retry_count <= 0:
+        return filename
+    path = Path(filename)
+    suffix = "".join(path.suffixes)
+    if suffix:
+        stem = path.name[: -len(suffix)]
+        name = f"{stem}-{retry_count}{suffix}"
+    else:
+        name = f"{path.name}-{retry_count}"
+    return path.with_name(name).as_posix()
 
 
 def format_aggregate_run_summary(results: list[PipelineResult], status: str, reason: str) -> str:
