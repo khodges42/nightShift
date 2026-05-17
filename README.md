@@ -68,7 +68,13 @@ python -m nightshift.cli --help
 
 NightShift uses the Python standard library for runtime behavior where practical. PyYAML is used automatically if installed, but starter configs work with the built-in YAML subset parser.
 
-## Quickstart
+## Getting Started
+
+Start with the [Quickstart](QUICKSTART.md). It uses deterministic fake agents so you can verify lookup, context generation, patch validation, patch apply, tests, and artifacts without installing a model.
+
+After that works, continue with [Tutorial 01: Running NightShift With Real Local Models](docs/tutorial/01-intro.md). It swaps the fake agents for Ollama-backed agents such as `qwen2.5-coder:14b` and walks through dry-run and apply-mode patch generation.
+
+### Quickstart Commands
 
 Validate the included end-to-end patch example:
 
@@ -298,6 +304,7 @@ python -m compileall nightshift tests
 Additional docs:
 
 - [Quickstart](QUICKSTART.md)
+- [Tutorial: running real local models](docs/tutorial/01-intro.md)
 - [Config reference](docs/config-reference.md)
 - [Artifact review workflow](docs/artifact-review.md)
 - [Troubleshooting](docs/troubleshooting.md)

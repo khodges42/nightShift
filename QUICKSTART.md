@@ -255,7 +255,7 @@ Acceptance Criteria:
 - Includes tests for both branches
 ```
 
-### 4. Add Prompt Files
+### 4. Add Prompt Files and Fake Agent Fixtures
 
 `agents/planner.md`:
 
@@ -271,7 +271,30 @@ You are the implementation agent. Output only a unified diff.
 Preserve existing behavior and include tests when needed.
 ```
 
-For deterministic local fixtures, add `agents/fake_planner.py` that requests file lookups and `agents/fake_code_writer.py` that prints a unified diff. The included `examples/quickstart-lisp/` project contains working fixtures.
+The config above also expects two deterministic Python fixtures:
+
+```text
+agents/fake_planner.py
+agents/fake_code_writer.py
+```
+
+If you have the NightShift checkout locally, copy the working fixtures from the included example project.
+
+PowerShell:
+
+```powershell
+Copy-Item C:\Users\metis\Documents\GitHub\nightShift\examples\quickstart-lisp\agents\fake_planner.py agents\
+Copy-Item C:\Users\metis\Documents\GitHub\nightShift\examples\quickstart-lisp\agents\fake_code_writer.py agents\
+```
+
+Bash:
+
+```bash
+cp /path/to/nightShift/examples/quickstart-lisp/agents/fake_planner.py agents/
+cp /path/to/nightShift/examples/quickstart-lisp/agents/fake_code_writer.py agents/
+```
+
+These fixtures make the manual project behave like `examples/quickstart-lisp/`: the fake planner requests repository context, and the fake code writer emits a real unified diff.
 
 `agents/reviewer.md`:
 
