@@ -18,7 +18,8 @@ class WebDashboardTests(unittest.TestCase):
             root = Path(directory)
             artifacts = ArtifactStore(root, ".nightshift", run_id="test-run")
             artifacts.initialize_run()
-            artifacts.run_summary_path.write_text("# Summary\n\nok", encoding="utf-8")
+            artifacts.run_summary_path.write_text("# Summary\n\n- Status: failed\n\nok", encoding="utf-8")
+            (artifacts.run_dir / "devlog.md").write_text("# Devlog\n\nPlanner proposed:\n- do this", encoding="utf-8")
             artifacts.run_log_path.write_text(
                 "\n".join(f"line {index}" for index in range(120)),
                 encoding="utf-8",
@@ -30,10 +31,15 @@ class WebDashboardTests(unittest.TestCase):
             dashboard = render_dashboard(root / ".nightshift")
 
             self.assertEqual(len(runs), 1)
+            self.assertEqual(runs[0].status, "failed")
             self.assertEqual(len(runs[0].log_tail), 100)
+            self.assertIn("devlog.md", runs[0].artifacts)
             self.assertIn("ok", content)
             self.assertIn("escapes", escaped)
             self.assertIn("Log Tail", dashboard)
+            self.assertIn("Planner proposed", dashboard)
+            self.assertIn("FAILED", dashboard)
+            self.assertIn("artifact-link", dashboard)
             self.assertIn("line 119", dashboard)
             self.assertNotIn("line 19\n", dashboard)
 

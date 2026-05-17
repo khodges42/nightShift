@@ -48,7 +48,7 @@ pipeline:
       output: context-pack.md
 
     - id: implement
-      type: code_writer
+      type: file_writer
       agent: implementer
       output: proposed.patch
 

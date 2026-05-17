@@ -874,7 +874,7 @@ NightShift currently provides:
 * Context pack generation
 * Unified diff code-writing contract
 * Deterministic diff generation from model-supplied complete file blocks
-* Patch normalization, validation, dry-run, and apply modes
+* Patch normalization, deterministic hunk-count repair, validation, dry-run, and apply modes
 * Per-attempt retry patch artifacts such as `repair-1.patch`, `normalized-1.patch`, and `patch-validation-1.md`
 * Test/static failure repair loops via bounded stage retries
 * Prompt bundle construction with project, task, retry, and previous-stage context
@@ -1025,7 +1025,7 @@ The next important additions are:
    Continue improving per-attempt artifact preservation. Patch retries now preserve files such as `repair-1.patch`, `normalized-1.patch`, and `patch-validation-1.md`; future work should add richer latest-attempt indexes and dashboard navigation.
 
 8. Patch repair stage
-   Add an explicit patch repair or strict normalizer stage that receives the invalid patch, validation error, and relevant source excerpts, then returns a complete replacement patch. This stage should remain bounded by strict validation and should not silently guess intent for arbitrary malformed hunks.
+   Hunk counts are now deterministically recomputed during normalization for direct unified diff output. Future work should add an explicit patch repair stage for malformed hunk bodies that receives the invalid patch, validation error, and relevant source excerpts, then returns a complete replacement patch. This stage should remain bounded by strict validation and should not silently guess intent for arbitrary malformed hunks.
 
 9. Richer dashboard
    Add task/stage navigation, patch views, validation status, run log tail, and artifact links without adding mutation controls.

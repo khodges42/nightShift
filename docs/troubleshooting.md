@@ -20,6 +20,10 @@ If `require_clean_worktree: true`, NightShift blocks dirty repositories before c
 
 The `ollama` backend uses Ollama's local HTTP API, normally at `http://localhost:11434/api/generate`. Confirm Ollama is running and the configured model is available with `ollama list` or `ollama pull <model>`. Tests do not require Ollama.
 
+## Patch validation reports hunk count mismatch
+
+Use `file_writer` for local model runs when possible. It asks the model for complete file blocks and lets NightShift generate the unified diff. For direct `code_writer` patches, the normalizer now recomputes hunk counts before validation, but malformed hunk bodies still fail validation.
+
 ## Flask dashboard fails
 
 Install Flask:

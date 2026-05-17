@@ -68,11 +68,12 @@ Patch validator stage options:
 - `max_lines`: max changed lines.
 - `forbidden_paths`: paths the patch must not touch.
 - Unified diff hunk line prefixes and hunk line counts are validated before patch apply.
+- The patch normalizer recomputes hunk line counts from hunk bodies for direct unified diff output.
 
 Writer stages:
 
 - `code_writer`: agent returns a unified diff directly.
-- `file_writer`: agent returns complete file content blocks; NightShift generates the unified diff deterministically.
+- `file_writer`: agent returns complete file content blocks; NightShift generates the unified diff deterministically. Prefer this for local models that wrap or miscount long patch hunks.
 
 `file_writer` blocks use this form:
 

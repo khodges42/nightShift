@@ -16,6 +16,7 @@ class TaskReport:
     final_notes_path: Path
     stage_results_path: Path
     run_summary_path: Path
+    devlog_path: Path
 
 
 class ReportGenerator:
@@ -77,7 +78,19 @@ class ReportGenerator:
             ),
             encoding="utf-8",
         )
-        return TaskReport(final_notes_path, stage_results_path, self.artifacts.run_summary_path)
+        devlog_path = self.artifacts.run_dir / "devlog.md"
+        devlog_path.write_text(
+            format_devlog(
+                task=task,
+                status=status,
+                reason=reason,
+                retry_count=retry_count,
+                stage_results=stage_results,
+                modified_files=modified_files,
+            ),
+            encoding="utf-8",
+        )
+        return TaskReport(final_notes_path, stage_results_path, self.artifacts.run_summary_path, devlog_path)
 
 
 def format_stage_results(
@@ -203,6 +216,99 @@ def format_run_summary(
             "",
         ]
     )
+
+
+def format_devlog(
+    task: Task,
+    status: str,
+    reason: str,
+    retry_count: int,
+    stage_results: list[StageResult],
+    modified_files: list[str],
+) -> str:
+    lines = [
+        "# Devlog",
+        "",
+        f"Task `{task.id}`: {task.title}",
+        "",
+        f"Status: {status.upper()}",
+        f"Retries: {retry_count}",
+        f"Outcome: {reason}",
+        "",
+    ]
+    stage_titles = {
+        "agent": "Agent",
+        "agent_review": "Reviewer",
+        "code_writer": "Implementer",
+        "file_writer": "Implementer",
+        "patch_normalizer": "Normalizer",
+        "patch_validator": "Patch validator",
+        "patch_apply": "Patch apply",
+        "command": "Command",
+        "repo_context": "Context builder",
+        "summarize": "Summarizer",
+    }
+    for result in stage_results:
+        label = _devlog_stage_label(result.stage_id, stage_titles)
+        verb = _devlog_verb(label, result.status)
+        lines.extend(
+            [
+                f"## {label}",
+                "",
+                f"{verb}:",
+                f"- Status: {result.status}",
+                f"- Reason: {result.reason}",
+            ]
+        )
+        if result.output_path:
+            lines.append(f"- Artifact: `{result.output_path}`")
+        if result.context_update:
+            lines.append(f"- Note: {result.context_update}")
+        lines.append("")
+    lines.extend(
+        [
+            "## Modified Files",
+            "",
+            *([f"- `{path}`" for path in modified_files] if modified_files else ["- None detected"]),
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _devlog_stage_label(stage_id: str, stage_titles: dict[str, str]) -> str:
+    normalized = stage_id.lower()
+    if "plan" in normalized:
+        return "Planner"
+    if "implement" in normalized or "write" in normalized:
+        return "Implementer"
+    if "review" in normalized:
+        return "Reviewer"
+    if "test" in normalized:
+        return "Tests"
+    if "context" in normalized:
+        return "Context builder"
+    if "validate" in normalized:
+        return "Patch validator"
+    if "apply" in normalized:
+        return "Patch apply"
+    if "normalize" in normalized:
+        return "Normalizer"
+    return stage_titles.get(normalized, stage_id.replace("_", " ").title())
+
+
+def _devlog_verb(label: str, status: str) -> str:
+    if label == "Planner":
+        return "Planner proposed"
+    if label == "Implementer":
+        return "Implementer tried"
+    if label == "Reviewer":
+        return "Reviewer responded"
+    if label == "Tests":
+        return "Tests reported"
+    if status == "fail":
+        return f"{label} stopped"
+    return f"{label} completed"
 
 
 def collect_modified_files(project_root: Path) -> list[str]:

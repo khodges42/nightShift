@@ -59,7 +59,34 @@ def normalize_patch_text(text: str) -> str:
     patch = extract_unified_diff(text)
     if "@@" not in patch:
         raise PipelineError("Patch error: unified diff has no hunks.")
-    return patch
+    return repair_hunk_counts(patch)
+
+
+def repair_hunk_counts(patch: str) -> str:
+    """Rewrite unified diff hunk counts from the actual hunk body."""
+
+    lines = patch.splitlines()
+    repaired: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if not line.startswith("@@"):
+            repaired.append(line)
+            index += 1
+            continue
+
+        body: list[str] = []
+        body_index = index + 1
+        while body_index < len(lines):
+            next_line = lines[body_index]
+            if next_line.startswith("@@") or next_line.startswith("diff --git "):
+                break
+            body.append(next_line)
+            body_index += 1
+        repaired.append(_format_hunk_header(line, body, index + 1))
+        repaired.extend(body)
+        index = body_index
+    return "\n".join(repaired).rstrip() + "\n"
 
 
 def parse_file_updates(text: str) -> tuple[FileUpdate, ...]:
@@ -290,9 +317,9 @@ def _validate_hunk_counts(patch: str) -> None:
         if line.startswith(" "):
             current["old_actual"] += 1
             current["new_actual"] += 1
-        elif line.startswith("-") and not line.startswith("---"):
+        elif line.startswith("-"):
             current["old_actual"] += 1
-        elif line.startswith("+") and not line.startswith("+++"):
+        elif line.startswith("+"):
             current["new_actual"] += 1
     flush(len(patch.splitlines()) + 1)
 
@@ -316,6 +343,39 @@ def _parse_hunk_header(line: str, line_number: int) -> dict[str, int]:
         "old_actual": 0,
         "new_actual": 0,
     }
+
+
+def _format_hunk_header(line: str, body: list[str], line_number: int) -> str:
+    match = re.match(
+        r"^@@ -(?P<old_start>\d+)(?:,(?P<old_count>\d+))? "
+        r"\+(?P<new_start>\d+)(?:,(?P<new_count>\d+))? @@(?P<section>.*)$",
+        line,
+    )
+    if not match:
+        raise PipelineError(
+            f"Patch validation failed: malformed hunk header at line {line_number}."
+        )
+    old_count = 0
+    new_count = 0
+    for body_line in body:
+        if body_line.startswith("\\"):
+            continue
+        if body_line.startswith(" "):
+            old_count += 1
+            new_count += 1
+        elif body_line.startswith("-"):
+            old_count += 1
+        elif body_line.startswith("+"):
+            new_count += 1
+    return (
+        f"@@ -{match.group('old_start')}{_format_count(old_count)} "
+        f"+{match.group('new_start')}{_format_count(new_count)} @@"
+        f"{match.group('section')}"
+    )
+
+
+def _format_count(count: int) -> str:
+    return "" if count == 1 else f",{count}"
 
 
 def _validate_file_states(patch: str, root: Path) -> None:
@@ -352,8 +412,15 @@ def _validate_file_states(patch: str, root: Path) -> None:
 
 def _changed_line_count(patch: str) -> int:
     count = 0
+    in_hunk = False
     for line in patch.splitlines():
-        if line.startswith(("+++", "---")):
+        if line.startswith("diff --git "):
+            in_hunk = False
+            continue
+        if line.startswith("@@"):
+            in_hunk = True
+            continue
+        if not in_hunk or line.startswith("\\"):
             continue
         if line.startswith(("+", "-")):
             count += 1

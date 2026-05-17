@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 import re
 
@@ -202,10 +202,7 @@ class PipelineRunner:
                     retry_count=retry_count,
                     next_stage=target_stage,
                 )
-                retry_notes.append(
-                    f"Retry {retry_count}: stage '{stage.id}' returned "
-                    f"{result.status} ({result.reason}); redirecting to '{target_stage}'."
-                )
+                retry_notes.append(self._format_retry_note(retry_count, stage, result, target_stage))
                 index = stage_indexes[target_stage]
                 continue
 
@@ -441,8 +438,9 @@ class PipelineRunner:
         if chart_path.exists():
             enriched_outputs["project-context-chart.md"] = chart_path.read_text(encoding="utf-8", errors="replace")
         context = self.context.read_context(task, retry_notes)
+        agent_stage = self._writer_agent_stage(stage, retry_count)
         result = self.agent_executor.run_stage(
-            stage,
+            agent_stage,
             task,
             enriched_outputs,
             retry_notes,
@@ -473,7 +471,7 @@ class PipelineRunner:
                 "Repository lookup results have been provided. Return the unified diff now; do not request more lookups.",
             ]
             result = self.agent_executor.run_stage(
-                stage,
+                agent_stage,
                 task,
                 rerun_outputs,
                 rerun_notes,
@@ -538,8 +536,9 @@ class PipelineRunner:
         if chart_path.exists():
             enriched_outputs["project-context-chart.md"] = chart_path.read_text(encoding="utf-8", errors="replace")
         context = self.context.read_context(task, retry_notes)
+        agent_stage = self._writer_agent_stage(stage, retry_count)
         result = self.agent_executor.run_stage(
-            stage,
+            agent_stage,
             task,
             enriched_outputs,
             retry_notes,
@@ -570,7 +569,7 @@ class PipelineRunner:
                 "Repository lookup results have been provided. Return complete file blocks now; do not request more lookups.",
             ]
             result = self.agent_executor.run_stage(
-                stage,
+                agent_stage,
                 task,
                 rerun_outputs,
                 rerun_notes,
@@ -588,14 +587,28 @@ class PipelineRunner:
                 self.config.safety,
                 forbidden_paths=stage.forbidden_paths or DEFAULT_FORBIDDEN_PATHS,
             )
+            patch_reason = "Deterministic patch written from file blocks."
+            log_message = "Wrote deterministic patch from file blocks"
         except PipelineError as exc:
-            summary_filename = "implementation-summary.md" if retry_count == 0 else f"repair-summary-{retry_count}.md"
-            self.artifacts.write_stage_output(
-                task.id,
-                summary_filename,
-                f"# Implementation Summary\n\nStatus: fail\nReason: {exc}\n",
-            )
-            return StageResult(stage.id, "fail", str(exc), output_path=result.output_path)
+            try:
+                patch = normalize_patch_text(stdout)
+            except PipelineError:
+                summary_filename = "implementation-summary.md" if retry_count == 0 else f"repair-summary-{retry_count}.md"
+                reason = str(exc)
+                if "generated patch has no changes" in reason and retry_count:
+                    reason = (
+                        "File writer error: repair output produced no changes relative to "
+                        "the current workspace. The previous patch was applied, tests failed, "
+                        "and the repair attempt repeated the already-applied file content."
+                    )
+                self.artifacts.write_stage_output(
+                    task.id,
+                    summary_filename,
+                    f"# Implementation Summary\n\nStatus: fail\nReason: {reason}\n",
+                )
+                return StageResult(stage.id, "fail", reason, output_path=result.output_path)
+            patch_reason = "Fallback patch written from unified diff output."
+            log_message = "Wrote fallback patch from unified diff output"
         patch_filename = "repair-{0}.patch".format(retry_count) if retry_count else (stage.output or "proposed.patch")
         summary_filename = "implementation-summary.md" if retry_count == 0 else f"repair-summary-{retry_count}.md"
         proposed_path = self.artifacts.write_stage_output(task.id, patch_filename, patch)
@@ -611,7 +624,7 @@ class PipelineRunner:
         )
         self.logger.event(
             "artifact.write",
-            "Wrote deterministic patch from file blocks",
+            log_message,
             stage_id=stage.id,
             task_id=task.id,
             artifact_path=proposed_path.relative_to(self.config.project.root),
@@ -619,10 +632,14 @@ class PipelineRunner:
         return StageResult(
             stage.id,
             "pass",
-            "Deterministic patch written from file blocks.",
+            patch_reason,
             output_path=str(proposed_path.relative_to(self.config.project.root)),
             context_update=f"Implementation summary: {summary_path.relative_to(self.config.project.root).as_posix()}",
         )
+
+    def _writer_agent_stage(self, stage: StageConfig, retry_count: int) -> StageConfig:
+        suffix = f"-{retry_count}" if retry_count else ""
+        return replace(stage, output=f"{stage.id}-agent-output{suffix}.md")
 
     def _run_patch_normalizer_stage(
         self,
@@ -887,6 +904,51 @@ class PipelineRunner:
         if not path.exists():
             return ""
         return path.read_text(encoding="utf-8")
+
+    def _format_retry_note(
+        self,
+        retry_count: int,
+        stage: StageConfig,
+        result: StageResult,
+        target_stage: str,
+    ) -> str:
+        note = (
+            f"Retry {retry_count}: stage '{stage.id}' returned "
+            f"{result.status} ({result.reason}); redirecting to '{target_stage}'."
+        )
+        excerpt = self._failure_excerpt(result.output_path)
+        if not excerpt:
+            return note
+        return f"{note}\n\nRelevant failure output:\n```text\n{excerpt}\n```"
+
+    def _failure_excerpt(self, output_path: str | None, max_chars: int = 3500) -> str:
+        content = self._read_output(output_path)
+        if not content.strip():
+            return ""
+        patterns = (
+            "error",
+            "fail",
+            "traceback",
+            "assertionerror",
+            "exception",
+            "exit code",
+            "stderr",
+            "stdout",
+            "timed out",
+        )
+        lines = content.splitlines()
+        selected = [
+            line
+            for line in lines
+            if any(pattern in line.lower() for pattern in patterns)
+        ]
+        excerpt = "\n".join(selected).strip()
+        if len(excerpt) < 400:
+            excerpt = content.strip()
+        excerpt = re.sub(r"\n{4,}", "\n\n\n", excerpt)
+        if len(excerpt) <= max_chars:
+            return excerpt
+        return excerpt[:max_chars].rstrip() + "\n... <truncated>"
 
 def format_summary_stage(
     task: Task,

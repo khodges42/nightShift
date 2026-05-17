@@ -49,9 +49,11 @@ class ReportGeneratorTests(unittest.TestCase):
             self.assertTrue(report.final_notes_path.exists())
             self.assertTrue(report.stage_results_path.exists())
             self.assertTrue(report.run_summary_path.exists())
+            self.assertTrue(report.devlog_path.exists())
             self.assertIn("Retry count: 1", report.final_notes_path.read_text(encoding="utf-8"))
             self.assertIn("test", report.stage_results_path.read_text(encoding="utf-8"))
             self.assertIn("Final notes", report.run_summary_path.read_text(encoding="utf-8"))
+            self.assertIn("Tests reported", report.devlog_path.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

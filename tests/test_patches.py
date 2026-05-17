@@ -8,6 +8,7 @@ from nightshift.patches import (
     generate_patch_from_file_updates,
     normalize_patch_text,
     parse_file_updates,
+    repair_hunk_counts,
     validate_patch,
 )
 
@@ -121,6 +122,58 @@ new file mode 100644
 
             with self.assertRaisesRegex(PipelineError, "new line count expected 2, got 1"):
                 validate_patch(patch, root, safety)
+
+    def test_normalize_repairs_hunk_count_mismatch(self) -> None:
+        lines = "\n".join(f"+line {number}" for number in range(38))
+        patch = f"""diff --git a/src/app.py b/src/app.py
+--- /dev/null
++++ b/src/app.py
+@@ -0,0 +1,40 @@
+{lines}
+"""
+
+        normalized = normalize_patch_text(patch)
+
+        self.assertIn("@@ -0,0 +1,38 @@", normalized)
+
+    def test_validate_patch_counts_hunk_lines_that_look_like_headers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "src").mkdir()
+            safety = SafetyConfig(
+                require_clean_worktree=False,
+                scoped_paths=("src",),
+                allowed_commands=(),
+                forbidden_commands=(),
+            )
+            patch = """diff --git a/src/app.py b/src/app.py
+--- a/src/app.py
++++ b/src/app.py
+@@ -1,3 +1,3 @@
+ context
+---
+----
++++
+++++
+"""
+
+            result = validate_patch(patch, root, safety)
+
+            self.assertEqual(result.changed_lines, 4)
+
+    def test_repair_hunk_counts_counts_header_like_body_lines(self) -> None:
+        patch = """diff --git a/src/app.py b/src/app.py
+--- a/src/app.py
++++ b/src/app.py
+@@ -1 +1 @@
+ context
+---
++++
+"""
+
+        repaired = repair_hunk_counts(patch)
+
+        self.assertIn("@@ -1,2 +1,2 @@", repaired)
 
     def test_validate_patch_accepts_multiple_files(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
