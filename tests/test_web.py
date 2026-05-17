@@ -3,7 +3,7 @@ import tempfile
 import unittest
 
 from nightshift.artifacts import ArtifactStore
-from nightshift.web import list_runs, read_artifact, render_dashboard
+from nightshift.web import _logo_path, list_runs, read_artifact, render_dashboard
 
 
 class WebDashboardTests(unittest.TestCase):
@@ -43,6 +43,10 @@ class WebDashboardTests(unittest.TestCase):
             self.assertIn("artifact-link", dashboard)
             self.assertIn("line 119", dashboard)
             self.assertNotIn("line 19\n", dashboard)
+
+    def test_logo_path_falls_back_to_repo_logo(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertTrue(_logo_path(Path(directory)).exists())
 
 
 if __name__ == "__main__":

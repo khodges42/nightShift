@@ -156,7 +156,7 @@ def create_app(project_root: str | Path = ".", artifact_dir: str | Path = ".nigh
 
     @app.get("/assets/logo.png")
     def logo():
-        logo_path = root / "docs" / "images" / "logo.png"
+        logo_path = _logo_path(root)
         if not logo_path.exists():
             return Response(status=404)
         response = Response(logo_path.read_bytes(), mimetype="image/png")
@@ -180,6 +180,13 @@ def _artifact_paths(run_path: Path) -> list[str]:
         "run.log": 2,
     }
     return sorted(paths, key=lambda item: (priority.get(item, 10), item))
+
+
+def _logo_path(project_root: Path) -> Path:
+    project_logo = project_root / "docs" / "images" / "logo.png"
+    if project_logo.exists():
+        return project_logo
+    return Path(__file__).resolve().parent.parent / "docs" / "images" / "logo.png"
 
 
 def _status_from_summary(summary: str) -> str:
