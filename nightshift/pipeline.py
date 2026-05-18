@@ -1015,6 +1015,9 @@ class PipelineRunner:
         content = self._read_output(output_path)
         if not content.strip():
             return ""
+        cleaned_content = re.sub(r"\n{4,}", "\n\n\n", content.strip())
+        if len(cleaned_content) <= max_chars:
+            return cleaned_content
         patterns = (
             "error",
             "fail",

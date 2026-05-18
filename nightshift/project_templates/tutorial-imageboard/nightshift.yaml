@@ -7,6 +7,7 @@ project:
 safety:
   require_clean_worktree: false
   scoped_paths:
+    - .
     - src
     - tests
     - templates

@@ -13,6 +13,7 @@ from nightshift.config import (
     StageConfig,
 )
 from nightshift.pipeline import PipelineRunner
+from nightshift.stages import StageResult
 from nightshift.tasks import parse_tasks
 
 
@@ -327,6 +328,49 @@ Acceptance Criteria:
             content = chart.read_text(encoding="utf-8")
             self.assertIn("cli.py", content)
             self.assertIn("main@L1", content)
+
+    def test_retry_note_keeps_small_failure_output_unfiltered(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            artifacts = ArtifactStore(root, ".nightshift", run_id="test-run")
+            config = make_config(root, ())
+            runner = PipelineRunner(config, artifacts)
+            output_path = artifacts.write_stage_output(
+                "TASK-001",
+                "test-output.txt",
+                "\n".join(
+                    [
+                        "# Command Output: test",
+                        "",
+                        "### stdout",
+                        "",
+                        "```text",
+                        "def test_board_route(self):",
+                        "    response = self.client.get('/board/general')",
+                        "    self.assertEqual(response.status_code, 200)",
+                        "E   AssertionError: 404 != 200",
+                        "```",
+                        "",
+                    ]
+                ),
+            )
+            relative_output = str(output_path.relative_to(root))
+
+            note = runner._format_retry_note(
+                1,
+                StageConfig(id="test", type="command", on_fail="write"),
+                StageResult(
+                    stage_id="test",
+                    status="fail",
+                    reason="Command exited with code 1: python -m pytest -q",
+                    output_path=relative_output,
+                ),
+                "write",
+            )
+
+            self.assertIn("response = self.client.get('/board/general')", note)
+            self.assertIn("self.assertEqual(response.status_code, 200)", note)
 
     def test_code_writer_normalizer_and_validator_pipeline(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

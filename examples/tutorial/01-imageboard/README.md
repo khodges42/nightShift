@@ -47,7 +47,7 @@ python -m pip install -e .
 Install target project dependencies:
 
 ```bash
-python -m pip install flask pillow pytest
+python -m pip install flask pillow pytest flask_sqlalchemy
 ```
 
 Install and start Ollama, then make sure the model is available:

@@ -73,6 +73,7 @@ def format_banner(stream: TextIO | None = None) -> str:
         "██║ ╚████║██║╚██████╔╝██║  ██║   ██║   ███████║██║  ██║██║██║        ██║   ",
         "╚═╝  ╚═══╝╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝╚═╝        ╚═╝   ",
         "",
+        "      NightShift",
        f"      [ {quote} ]",
         "      [ planner | implementer | verifier | audit ]",
         "",

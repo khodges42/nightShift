@@ -454,6 +454,8 @@ def output_contract_for(stage: StageConfig) -> str:
                 "Do not include prose outside file blocks.",
                 "Include every file needed for the task, including tests.",
                 "NightShift will generate the unified diff deterministically.",
+                "On repair attempts, use the retry notes and failed stage output to diagnose the root cause before changing files.",
+                "Do not repeat an unchanged solution unless the failure output shows the implementation is already correct.",
             ]
         )
     if stage.type == "patch_normalizer":

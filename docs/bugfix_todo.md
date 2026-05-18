@@ -1,5 +1,11 @@
 # Bugfix TODO
 
+## Some kind of tool install feature
+
+Continually fails on flask_sqlalchemy until I install that.
+
+## Tutorial need to include . directory for imageboard
+
 ## Git status artifacts are noisy for non-git repositories
 
 Observed artifact:

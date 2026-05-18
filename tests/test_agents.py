@@ -58,6 +58,20 @@ class AgentExecutorTests(unittest.TestCase):
         self.assertIn("Task context body", prompt)
         self.assertIn("- No retries", prompt)
 
+    def test_file_writer_contract_mentions_repair_context(self) -> None:
+        task = parse_tasks(TASK_MD)[0]
+        prompt = build_prompt_bundle(
+            system_prompt="System rules",
+            stage=StageConfig(id="write", type="file_writer", agent="writer"),
+            task=task,
+            project_context="Project context",
+            previous_outputs={},
+            retry_notes=["Retry note"],
+        )
+
+        self.assertIn("On repair attempts", prompt)
+        self.assertIn("failed stage output", prompt)
+
     def test_command_agent_writes_output_and_returns_pass(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
