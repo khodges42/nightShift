@@ -9,7 +9,7 @@ The target is a compact 4chan-style imageboard: boards, threads, replies, images
 Run this from a disposable parent directory:
 
 ```bash
-nightshift init --template imageboard --root nightshift-imageboard
+nightshift init --template tutorial-imageboard --root nightshift-imageboard
 cd nightshift-imageboard
 ```
 

@@ -3,7 +3,7 @@ import tempfile
 import unittest
 
 from nightshift.errors import InitError
-from nightshift.init import init_project
+from nightshift.init import available_templates, init_project
 
 
 class InitProjectTests(unittest.TestCase):
@@ -42,7 +42,7 @@ class InitProjectTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
 
-            written = init_project(root, template="imageboard")
+            written = init_project(root, template="tutorial-imageboard")
 
             self.assertIn(root / "nightshift.yaml", written)
             self.assertTrue((root / ".nightshift" / "tasks.md").exists())
@@ -53,6 +53,12 @@ class InitProjectTests(unittest.TestCase):
                 "task_file: .nightshift/tasks.md",
                 (root / "nightshift.yaml").read_text(encoding="utf-8"),
             )
+
+    def test_available_templates_includes_filesystem_templates(self) -> None:
+        self.assertIn("basic", available_templates())
+        self.assertIn("real-long-running", available_templates())
+        self.assertIn("real-simple", available_templates())
+        self.assertIn("tutorial-imageboard", available_templates())
 
     def test_init_rejects_unknown_template(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

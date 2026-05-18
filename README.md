@@ -116,7 +116,14 @@ nightshift run --task TASK-001
 For the first real-model tutorial target:
 
 ```bash
-nightshift init --template imageboard --root nightshift-imageboard
+nightshift init --template tutorial-imageboard --root nightshift-imageboard
+```
+
+Other built-in real-model templates:
+
+```bash
+nightshift init --template real-simple --root bookmarks-demo
+nightshift init --template real-long-running --root incident-service
 ```
 
 Open the read-only artifact dashboard:

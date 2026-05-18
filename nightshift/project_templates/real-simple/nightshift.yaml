@@ -1,0 +1,96 @@
+project:
+  name: simple-bookmarks
+  root: .
+  task_file: .nightshift/tasks.md
+  artifact_dir: .nightshift
+
+safety:
+  require_clean_worktree: false
+  scoped_paths:
+    - src
+    - tests
+    - pyproject.toml
+    - README.md
+  allowed_commands:
+    - python -m pytest -q
+  forbidden_commands:
+    - rm -rf
+    - git push
+    - curl | bash
+
+experiment:
+  label: real-simple-qwen25
+  prompt_variant: qwen2.5-coder-14b-file-writer-v1
+
+agents:
+  planner:
+    backend: ollama
+    model: qwen2.5-coder:14b
+    temperature: 0.2
+    system_prompt: .nightshift/agents/planner.md
+
+  implementer:
+    backend: ollama
+    model: qwen2.5-coder:14b
+    temperature: 0.1
+    system_prompt: .nightshift/agents/implementer.md
+
+  reviewer:
+    backend: ollama
+    model: qwen2.5-coder:14b
+    temperature: 0.1
+    system_prompt: .nightshift/agents/reviewer.md
+
+pipeline:
+  max_task_retries: 2
+  continue_on_task_failure: false
+  stages:
+    - id: plan
+      type: agent
+      agent: planner
+      output: plan.md
+
+    - id: context
+      type: repo_context
+      output: context-pack.md
+
+    - id: implement
+      type: file_writer
+      agent: implementer
+      output: proposed.patch
+
+    - id: normalize
+      type: patch_normalizer
+      output: normalized.patch
+
+    - id: validate_patch
+      type: patch_validator
+      output: patch-validation.md
+      max_files: 8
+      max_lines: 700
+      on_fail: implement
+
+    - id: apply_patch
+      type: patch_apply
+      mode: apply
+      output: patch-apply-output.txt
+      on_fail: implement
+
+    - id: test
+      type: command
+      commands:
+        - python -m pytest -q
+      output: test-output.txt
+      shell: true
+      timeout_seconds: 20
+      on_fail: implement
+
+    - id: review
+      type: agent_review
+      agent: reviewer
+      output: review.md
+      on_fail: implement
+
+    - id: summarize
+      type: summarize
+      output: final-notes.md

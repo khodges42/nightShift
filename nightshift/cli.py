@@ -8,7 +8,7 @@ import sys
 
 from .config import validate_config
 from .errors import NightShiftError
-from .init import init_project
+from .init import available_templates, init_project
 from .pipeline import PipelineRunner
 from .runlog import RunLogger
 from .status import build_status, format_status
@@ -33,7 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument(
         "--template",
         default="basic",
-        choices=("basic", "imageboard"),
+        choices=available_templates(),
         help="Starter template to create.",
     )
     init_parser.add_argument("--force", action="store_true", help="Overwrite existing starter files.")
