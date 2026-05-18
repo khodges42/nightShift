@@ -113,6 +113,12 @@ nightshift status
 nightshift run --task TASK-001
 ```
 
+For the first real-model tutorial target:
+
+```bash
+nightshift init --template imageboard --root nightshift-imageboard
+```
+
 Open the read-only artifact dashboard:
 
 ```bash

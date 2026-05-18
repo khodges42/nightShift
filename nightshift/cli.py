@@ -30,6 +30,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     init_parser = subparsers.add_parser("init", help="Create starter NightShift files.")
     init_parser.add_argument("--root", default=".", help="Directory to initialize.")
+    init_parser.add_argument(
+        "--template",
+        default="basic",
+        choices=("basic", "imageboard"),
+        help="Starter template to create.",
+    )
     init_parser.add_argument("--force", action="store_true", help="Overwrite existing starter files.")
 
     validate_parser = subparsers.add_parser("validate", help="Validate nightshift.yaml.")
@@ -57,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if args.command == "init":
-            written = init_project(Path(args.root), force=args.force)
+            written = init_project(Path(args.root), force=args.force, template=args.template)
             print("Created NightShift starter files:")
             for path in written:
                 print(f"- {path}")

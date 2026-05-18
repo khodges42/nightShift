@@ -38,6 +38,27 @@ class InitProjectTests(unittest.TestCase):
 
             self.assertIn("TASK-001", (root / "tasks.md").read_text(encoding="utf-8"))
 
+    def test_init_imageboard_template_creates_control_and_source_dirs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            written = init_project(root, template="imageboard")
+
+            self.assertIn(root / "nightshift.yaml", written)
+            self.assertTrue((root / ".nightshift" / "tasks.md").exists())
+            self.assertTrue((root / ".nightshift" / "agents" / "planner.md").exists())
+            self.assertTrue((root / "src" / "imageboard" / ".gitkeep").exists())
+            self.assertTrue((root / "tests" / ".gitkeep").exists())
+            self.assertIn(
+                "task_file: .nightshift/tasks.md",
+                (root / "nightshift.yaml").read_text(encoding="utf-8"),
+            )
+
+    def test_init_rejects_unknown_template(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(InitError, "Unknown template"):
+                init_project(Path(directory), template="missing")
+
 
 if __name__ == "__main__":
     unittest.main()
