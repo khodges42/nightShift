@@ -1,5 +1,19 @@
 # Bugfix TODO
 
+## Some issues going with run --all
+ reason=Stage 'review' requested unknown next stage 'None'.
+
+## TASK-002 in imageboard tutorial tries to make an image
+tries to make an image for a test, I dont think it should do that.
+I think maybe some feature to create dummy files for tests would be useful
+Or maybe we have a little library of dummy files for use? Not sure how it would get an image otherwise.
+
+## Going from individual tasks to --all fails
+
+If you do nightshift run --task TASK-001 and then that completes and then you go to nightshift run --all it fails on blocked by missing dependencies: TASK-001 . I think this is because the tasks get reset at the top of the run, but there is something marking completion of TASK-001 requiring manual reset.
+
+run --all should start at the first not done task (seems like it does)
+
 ## Some kind of tool install feature
 
 Continually fails on flask_sqlalchemy until I install that.
