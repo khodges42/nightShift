@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 from .artifacts import ArtifactStore
+from .terminal import format_console_event_line, format_plain_event_line
 
 
 ConsoleWriter = Callable[[str], None]
@@ -40,9 +41,10 @@ class RunLogger:
 
     def event(self, event: str, message: str, **fields: object) -> None:
         safe_fields = _redact_fields(fields)
-        line = format_log_line(LogEvent(event=event, message=message, fields=safe_fields))
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        line = format_plain_event_line(timestamp, event, message, safe_fields)
         if self.console is not None:
-            self.console(line)
+            self.console(format_console_event_line(timestamp, event, message, safe_fields))
         for path in (self._run_log_path,):
             if path is None:
                 continue
@@ -64,12 +66,7 @@ class NullRunLogger(RunLogger):
 
 def format_log_line(log_event: LogEvent) -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    parts = [timestamp, log_event.event, log_event.message]
-    for key, value in sorted(log_event.fields.items()):
-        if value is None or value == "":
-            continue
-        parts.append(f"{key}={_format_value(value)}")
-    return " | ".join(parts)
+    return format_plain_event_line(timestamp, log_event.event, log_event.message, log_event.fields)
 
 
 def tail_lines(path: Path, limit: int = 100) -> list[str]:
@@ -78,11 +75,6 @@ def tail_lines(path: Path, limit: int = 100) -> list[str]:
     if not path.exists() or not path.is_file():
         return []
     return path.read_text(encoding="utf-8", errors="replace").splitlines()[-limit:]
-
-
-def _format_value(value: object) -> str:
-    text = str(value).replace("\n", " ").replace("\r", " ")
-    return text if text else ""
 
 
 def _redact_fields(fields: dict[str, object]) -> dict[str, object]:

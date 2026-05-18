@@ -12,6 +12,7 @@ from .init import available_templates, init_project
 from .pipeline import PipelineRunner
 from .runlog import RunLogger
 from .status import build_status, format_status
+from .terminal import format_banner, style_text
 from .tasks import (
     ensure_dependencies_satisfied,
     parse_task_file,
@@ -62,6 +63,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        _emit_banner(args.command)
         if args.command == "init":
             written = init_project(Path(args.root), force=args.force, template=args.template)
             print("Created NightShift starter files:")
@@ -102,7 +104,7 @@ def main(argv: list[str] | None = None) -> int:
             ensure_dependencies_satisfied(tasks, task)
             result = runner.run_task(task)
             print(f"Task: {result.task_id}")
-            print(f"Status: {result.status}")
+            print(style_text(f"Status: {result.status}", color=_status_color(result.status), bold=True))
             print(f"Retries: {result.retry_count}")
             print(f"Artifacts: {result.artifact_dir}")
             print(f"Reason: {result.reason}")
@@ -125,6 +127,23 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     return 0
+
+
+def _emit_banner(command: str) -> None:
+    if command == "web" or not sys.stdout.isatty():
+        return
+    print(format_banner())
+
+
+def _status_color(status: str) -> str | None:
+    lowered = status.lower()
+    if lowered in {"complete", "pass", "success"}:
+        return "\x1b[32m"
+    if lowered in {"failed", "fail", "error"}:
+        return "\x1b[31m"
+    if lowered in {"retry", "blocked", "warning"}:
+        return "\x1b[33m"
+    return None
 
 
 if __name__ == "__main__":
