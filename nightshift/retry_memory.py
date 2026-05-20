@@ -14,6 +14,7 @@ class RetryMemoryEntry:
     status: str
     cause: str
     next_stage: str
+    failure_signature: str
 
 
 def summarize_retry_memory(entries: tuple[RetryMemoryEntry, ...]) -> str:
@@ -23,17 +24,24 @@ def summarize_retry_memory(entries: tuple[RetryMemoryEntry, ...]) -> str:
     for entry in entries[-8:]:
         lines.append(
             f"- Attempt {entry.attempt}: `{entry.stage_id}` returned {entry.status}; "
-            f"cause: {entry.cause}; next: `{entry.next_stage}`"
+            f"cause: {entry.cause}; signature: `{entry.failure_signature}`; next: `{entry.next_stage}`"
         )
     lines.append("")
     return "\n".join(lines)
 
 
-def entry_from_stage(attempt: int, result: StageResult, next_stage: str) -> RetryMemoryEntry:
+def entry_from_stage(
+    attempt: int,
+    result: StageResult,
+    next_stage: str,
+    *,
+    failure_signature: str,
+) -> RetryMemoryEntry:
     return RetryMemoryEntry(
         attempt=attempt,
         stage_id=result.stage_id,
         status=result.status,
         cause=result.reason,
         next_stage=next_stage,
+        failure_signature=failure_signature,
     )

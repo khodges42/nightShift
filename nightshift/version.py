@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 
-PACKAGE_VERSION = "0.2.4"
+PACKAGE_VERSION = "0.2.5"
 RELEASE_CHANNEL = "alpha"
-hotdog_version = "bratwurst"
-topping_version = "relish"
+hotdog_version = "chicago"
+topping_version = "onions"
 
 HOTDOG_VERSIONS = (
     "bratwurst",

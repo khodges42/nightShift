@@ -78,6 +78,7 @@ class PipelineConfig:
     max_task_retries: int
     stages: tuple[StageConfig, ...]
     continue_on_task_failure: bool = False
+    stop_on_repeated_failure_signature_after: int | None = None
 
 
 @dataclass(frozen=True)
@@ -265,6 +266,14 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
         pipeline_raw.get("continue_on_task_failure", False),
         "pipeline.continue_on_task_failure",
     )
+    stop_on_repeated_failure_signature_after = _optional_int_or_none(
+        pipeline_raw.get("stop_on_repeated_failure_signature_after"),
+        "pipeline.stop_on_repeated_failure_signature_after",
+    )
+    if stop_on_repeated_failure_signature_after is not None and stop_on_repeated_failure_signature_after < 2:
+        raise ConfigError(
+            "Config error: pipeline.stop_on_repeated_failure_signature_after must be two or greater."
+        )
 
     stages_raw = pipeline_raw.get("stages")
     if not isinstance(stages_raw, list) or not stages_raw:
@@ -396,6 +405,7 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
             max_task_retries=max_task_retries,
             stages=tuple(stages),
             continue_on_task_failure=continue_on_task_failure,
+            stop_on_repeated_failure_signature_after=stop_on_repeated_failure_signature_after,
         ),
         experiment=experiment,
     )

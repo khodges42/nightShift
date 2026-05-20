@@ -5,10 +5,12 @@ import unittest
 
 from nightshift.artifacts import ArtifactStore
 from nightshift.config import parse_config, StageConfig
-from nightshift.failures import classify_failure
+from nightshift.escalation import evaluate_retry_churn
+from nightshift.failures import build_failure_signature, classify_failure
 from nightshift.integ import cleanup_integration_runs, create_integration_run
 from nightshift.patches import validate_patch
 from nightshift.pipeline import PipelineRunner
+from nightshift.retry_memory import RetryMemoryEntry
 from nightshift.tasks import parse_tasks
 
 from tests.test_pipeline import TASK_MD, make_config, _write_common_files
@@ -35,6 +37,61 @@ class ReliabilityFeatureTests(unittest.TestCase):
 
         self.assertEqual(result.category, "missing dependency")
         self.assertIn("pastebin_app", result.probable_root_cause)
+
+    def test_failure_classifier_treats_traceback_into_source_as_logic_bug(self) -> None:
+        result = classify_failure(
+            "\n".join(
+                [
+                    '  File "C:\\repo\\project\\src\\pastebin_app\\app.py", line 31, in get_db',
+                    "    if 'db' not in g:",
+                    "NameError: name 'g' is not defined",
+                ]
+            ),
+            exit_code=1,
+        )
+
+        self.assertEqual(result.category, "logic bug")
+        self.assertIn("src\\pastebin_app\\app.py", result.probable_root_cause)
+
+    def test_retry_churn_stops_on_repeated_failure_signature(self) -> None:
+        entries = (
+            RetryMemoryEntry(
+                attempt=1,
+                stage_id="test",
+                status="fail",
+                cause="Command exited with code 1: python -m pytest -q",
+                next_stage="implement",
+                failure_signature="NameError | src/pastebin_app/app.py | 31 | python -m pytest -q",
+            ),
+            RetryMemoryEntry(
+                attempt=2,
+                stage_id="test",
+                status="fail",
+                cause="Command exited with code 1: python -m pytest -q",
+                next_stage="implement",
+                failure_signature="NameError | src/pastebin_app/app.py | 31 | python -m pytest -q",
+            ),
+        )
+
+        decision = evaluate_retry_churn(entries, retry_budget=4, repeated_signature_after=2)
+
+        self.assertTrue(decision.should_stop)
+        self.assertIn("same failure signature", decision.reason)
+
+    def test_build_failure_signature_prefers_project_traceback_over_pytest_cache(self) -> None:
+        signature = build_failure_signature(
+            "\n".join(
+                [
+                    '  File "C:\\repo\\project\\src\\pastebin_app\\app.py", line 31, in get_db',
+                    "NameError: name 'g' is not defined",
+                    '  File "C:\\Users\\metis\\...\\site-packages\\_pytest\\cacheprovider.py", line 429, in set',
+                ]
+            ),
+            reason="Command exited with code 1: python -m pytest -q",
+        )
+
+        self.assertIn("src\\pastebin_app\\app.py", signature)
+        self.assertNotIn("_pytest\\cacheprovider.py", signature)
 
     def test_command_failure_writes_diagnostics_and_retry_memory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

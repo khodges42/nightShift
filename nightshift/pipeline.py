@@ -16,7 +16,7 @@ from .dependencies import diagnose_python_dependencies, format_dependency_diagno
 from .escalation import evaluate_retry_churn, format_escalation_decision
 from .errors import PipelineError
 from .errors import NightShiftError
-from .failures import classify_failure, format_failure_classification
+from .failures import build_failure_signature, classify_failure, format_failure_classification
 from .git import ensure_clean_worktree, write_diff_artifact, write_git_artifacts
 from .patches import (
     DEFAULT_FORBIDDEN_PATHS,
@@ -232,7 +232,16 @@ class PipelineRunner:
                     )
                     break
                 retry_count += 1
-                memory_entry = entry_from_stage(retry_count, result, target_stage)
+                output = self._read_output(result.output_path)
+                failure_signature = ""
+                if stage.type in COMMAND_STAGE_TYPES:
+                    failure_signature = build_failure_signature(output, result.reason)
+                memory_entry = entry_from_stage(
+                    retry_count,
+                    result,
+                    target_stage,
+                    failure_signature=failure_signature,
+                )
                 retry_memory.append(memory_entry)
                 self.artifacts.write_stage_output(
                     task.id,
@@ -242,6 +251,8 @@ class PipelineRunner:
                 decision = evaluate_retry_churn(
                     tuple(retry_memory),
                     retry_budget=self.config.pipeline.max_task_retries + 1,
+                    repeated_signature_after=self.config.pipeline.stop_on_repeated_failure_signature_after
+                    or self.config.pipeline.max_task_retries,
                 )
                 self.artifacts.write_stage_output(
                     task.id,

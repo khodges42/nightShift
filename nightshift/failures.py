@@ -34,6 +34,8 @@ def classify_failure(output: str, exit_code: int | None = None, modified_files: 
     text = output or ""
     lowered = text.lower()
     failing_tests = extract_failing_tests(text)
+    exception_name = _extract_exception_name(text)
+    source_path, _ = _extract_traceback_location(text)
 
     missing = re.search(r"No module named ['\"]([^'\"]+)['\"]", text, re.IGNORECASE)
     if not missing:
@@ -48,6 +50,25 @@ def classify_failure(output: str, exit_code: int | None = None, modified_files: 
             "do not retry implementation until dependency is resolved",
             failing_tests,
         )
+    if exception_name and source_path and _looks_like_project_source(source_path):
+        if exception_name in {"TypeError", "AttributeError"}:
+            return FailureClassification(
+                "API misuse",
+                f"The implementation is calling an API with an incompatible shape near `{source_path}`.",
+                0.82,
+                "Retry implementation with the exception and relevant call site.",
+                "retry implementation",
+                failing_tests,
+            )
+        if exception_name in {"NameError", "OperationalError", "KeyError", "ValueError", "IndexError"}:
+            return FailureClassification(
+                "logic bug",
+                f"The failure originates in project code near `{source_path}`.",
+                0.8,
+                "Send the traceback and touched files back to the implementer.",
+                "retry implementation",
+                failing_tests,
+            )
     if re.search(r"\b(syntaxerror|indentationerror|importerror)\b", text, re.IGNORECASE):
         return FailureClassification(
             "syntax/import error",
@@ -113,6 +134,15 @@ def classify_failure(output: str, exit_code: int | None = None, modified_files: 
     )
 
 
+def build_failure_signature(output: str, reason: str = "") -> str:
+    text = "\n".join(part for part in (reason, output) if part)
+    command = _extract_command(text)
+    exception_name = _extract_exception_name(text)
+    source_path, source_line = _extract_traceback_location(text)
+    parts = [part for part in (exception_name, source_path, source_line, command) if part]
+    return " | ".join(parts) if parts else "unknown-failure"
+
+
 def extract_failing_tests(output: str) -> tuple[str, ...]:
     tests: list[str] = []
     patterns = (
@@ -126,6 +156,56 @@ def extract_failing_tests(output: str) -> tuple[str, ...]:
             if name not in tests:
                 tests.append(name)
     return tuple(tests)
+
+
+def _extract_exception_name(text: str) -> str:
+    candidates = []
+    for match in re.finditer(r"(?m)^(?:E\s+)?([A-Za-z0-9_.]+(?:Error|Exception|Warning|NameError|TypeError|AttributeError|KeyError|ValueError|IndexError)):\s*(.*)$", text):
+        candidates.append(match.group(1))
+    return candidates[-1] if candidates else ""
+
+
+def _extract_traceback_location(text: str) -> tuple[str, str]:
+    candidates: list[tuple[int, str, str]] = []
+    for match in re.finditer(r'(?m)^\s*File "([^"]+)", line (\d+), in .+$', text):
+        path = match.group(1)
+        line = match.group(2)
+        candidates.append((_traceback_score(path), path, line))
+    for match in re.finditer(r"(?m)^.*?([A-Za-z]:[\\/][^:\n]+?\.py):(\d+):", text):
+        path = match.group(1)
+        line = match.group(2)
+        candidates.append((_traceback_score(path), path, line))
+    if not candidates:
+        return "", ""
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    _, path, line = candidates[0]
+    return path, line
+
+
+def _extract_command(text: str) -> str:
+    candidates = []
+    for match in re.finditer(r"Command:\s*`([^`]+)`", text):
+        candidates.append(match.group(1))
+    return candidates[-1] if candidates else ""
+
+
+def _looks_like_project_source(path: str) -> bool:
+    normalized = path.replace("\\", "/").lower()
+    return "/src/" in normalized or "/tests/" in normalized
+
+
+def _traceback_score(path: str) -> int:
+    normalized = path.replace("\\", "/").lower()
+    score = 0
+    if normalized.endswith(".py"):
+        score += 1
+    if "/src/" in normalized:
+        score += 10
+    if "/tests/" in normalized:
+        score += 8
+    if "/site-packages/" in normalized or "/_pytest/" in normalized:
+        score -= 20
+    return score
 
 
 def format_failure_classification(result: FailureClassification, *, exit_code: int | None, modified_files: tuple[str, ...]) -> str:
