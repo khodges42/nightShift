@@ -26,7 +26,7 @@ BANNER_MESSAGES = [
     "WHO UP BREAKIN THEY BUILD?",
     "me and the boys at 2am lookin for BEANS",
     "local-first autonomous coding pipeline",
-    "why break then build while you're awake?",
+    "why break the build while you're awake?",
     "compiling bad ideas into good software",
     "local-first synthetic cognition",
     "the graveyard shift for software engineering",

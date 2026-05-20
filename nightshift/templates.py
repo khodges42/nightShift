@@ -33,6 +33,12 @@ agents:
     command: echo
     system_prompt: agents/reviewer.md
 
+  debugger:
+    backend: command
+    command: echo
+    role: debugger
+    system_prompt: agents/debugger.md
+
 pipeline:
   max_task_retries: 3
   stages:
@@ -49,7 +55,8 @@ pipeline:
 
     - id: implement
       type: agent
-      agent: implementer
+      agent_pool:
+        - implementer
       output: implementation-log.md
 
     - id: test
@@ -107,6 +114,18 @@ Rules:
 - Do not edit files outside scope.
 - Preserve existing style.
 - Write useful implementation notes.
+"""
+
+DEBUGGER_PROMPT = """# Debugger
+
+You diagnose failed attempts for NightShift.
+
+Output:
+- concise diagnosis
+- recommended next action
+- do not modify guidance
+
+Do not directly modify files.
 """
 
 REVIEWER_PROMPT = """# Reviewer
@@ -168,6 +187,13 @@ agents:
     temperature: 0.1
     system_prompt: .nightshift/agents/reviewer.md
 
+  debugger:
+    backend: ollama
+    model: qwen2.5-coder:14b
+    role: debugger
+    temperature: 0.1
+    system_prompt: .nightshift/agents/debugger.md
+
 pipeline:
   max_task_retries: 3
   continue_on_task_failure: false
@@ -183,7 +209,8 @@ pipeline:
 
     - id: implement
       type: file_writer
-      agent: implementer
+      agent_pool:
+        - implementer
       output: proposed.patch
 
     - id: normalize
@@ -195,6 +222,7 @@ pipeline:
       output: patch-validation.md
       max_files: 10
       max_lines: 900
+      max_delete_ratio: 0.70
       on_fail: implement
 
     - id: apply_patch
@@ -345,6 +373,16 @@ context_update: <compact useful note>
 Use retry when the implementation is close but needs another patch.
 Use fail when the patch is unsafe, unrelated, or clearly broken.
 Use pass only when the acceptance criteria are satisfied.
+"""
+
+REAL_MODEL_DEBUGGER_PROMPT = """You are the debugger agent for NightShift.
+
+Diagnose failed attempts without editing files.
+
+Use the task, current patch, failure output, and retry history to produce:
+- concise diagnosis
+- recommended next action
+- do not modify guidance
 """
 
 IMAGEBOARD_README = """# NightShift Imageboard Target

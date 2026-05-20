@@ -868,7 +868,9 @@ NightShift currently provides:
 * Ollama-backed local model agents through the local HTTP API
 * OpenAI-compatible local/server model agents
 * Per-agent temperature settings
+* Cost, runtime, retry, and estimated token telemetry summaries
 * Scoped repo lookup tools: `list_files`, `read_file`, and `grep`
+* Lightweight semantic repository indexing for files, symbols, imports, tests, and compact task context
 * Planner lookup requests, `files-inspected.md`, and planner reruns with retrieved context
 * Project context chart generation
 * Context pack generation
@@ -895,9 +897,322 @@ NightShift currently provides:
 * Final task notes, stage summaries, task completion artifacts, and run summaries
 * Documentation for config, artifact review, troubleshooting, quickstart, and patch workflows
 * A complete fake-agent patch-mode quickstart Lisp example under `examples/quickstart-lisp/`
+* A deterministic pastebin tutorial template with model fallback configuration
 
 The system remains sequential and local-first. It is designed to produce reviewable artifacts and repository state, not to deploy, push, or autonomously ship changes.
 
+
+# 16.5 Current Tasks Todo
+
+- [x] TASK-001: Failure classification pipeline
+
+Dependencies:
+- None
+
+Description:
+Add a deterministic post-failure analysis stage that runs after every failed command or test execution. The classifier should inspect stdout/stderr, exit codes, modified files, and failing tests, then categorize the failure and recommend the next orchestration action.
+
+Acceptance Criteria:
+- Captures stdout, stderr, exit code, modified files, and failing test names
+- Produces structured output containing:
+  - failure category
+  - probable root cause
+  - confidence
+  - recommended next action
+  - retry recommendation
+- Supports initial categories:
+  - syntax/import error
+  - missing dependency
+  - missing resource/fixture
+  - environment/config issue
+  - API misuse
+  - test expectation mismatch
+  - logic bug
+  - stuck/unclear
+- Integrates into orchestration pipeline before retries occur
+- Includes tests for classification behavior
+
+
+- [x] TASK-002: Structured blocked/resource request system
+
+Dependencies:
+- TASK-001
+
+Description:
+Allow agents to explicitly declare missing resources or environmental requirements instead of endlessly retrying implementation attempts. Add structured "blocked" responses and runtime support for generating common fixtures and test resources.
+
+Acceptance Criteria:
+- Supports structured blocked responses such as:
+  - missing fixture
+  - missing config
+  - missing database
+  - missing asset
+- Includes fixture generators for:
+  - PNG/JPG images
+  - JSON fixtures
+  - sqlite databases
+  - text/blob files
+- Runtime can automatically satisfy supported requests
+- Generated fixtures are isolated to the active run directory
+- Includes tests for fixture generation and blocked flow handling
+
+
+- [x] TASK-003: Dedicated debugger agent role
+
+Dependencies:
+- TASK-001
+
+Description:
+Introduce a dedicated debugger agent responsible for diagnosis rather than implementation. The debugger reviews failed attempts and provides concise explanations and recommendations for the implementer.
+
+Acceptance Criteria:
+- Debugger receives:
+  - task description
+  - current patch
+  - failure output
+  - recent attempt history
+- Debugger outputs:
+  - concise diagnosis
+  - recommended next action
+  - "do not modify" guidance
+- Debugger does not directly modify code initially
+- Implementer receives debugger output in retry context
+- Includes tests for debugger orchestration behavior
+
+
+- [x] TASK-004: Stuck detection and escalation policy engine
+
+Dependencies:
+- TASK-001
+- TASK-003
+
+Description:
+Detect retry churn loops and automatically escalate to different models, debugger review, or human intervention when progress stalls.
+
+Acceptance Criteria:
+- Tracks:
+  - repeated failures
+  - repeated file edits
+  - unchanged failing tests
+  - expanding diff size
+  - oscillating implementations
+- Supports configurable retry budgets
+- Supports escalation policies such as:
+  - debugger review
+  - larger local model
+  - cloud model
+  - human review
+- Stops infinite retry loops
+- Includes tests for churn detection and escalation behavior
+
+
+- [x] TASK-005: Multi-model orchestration and escalation
+
+Dependencies:
+- TASK-004
+
+Description:
+Add support for multiple implementation and debugging models with configurable routing, retry budgets, and escalation rules. Provide examples
+
+Acceptance Criteria:
+- Supports separate model pools for:
+  - implementers
+  - debuggers
+  - escalation models
+- Allows configurable retry budgets per model
+- Supports configurable temperatures per role
+- Allows fallback ordering between models
+- Integrates with escalation policy engine
+- Includes tests for model routing and escalation flow
+
+
+- [x] TASK-006: Dependency management agent
+
+Dependencies:
+- TASK-001
+
+Description:
+Add a dependency management subsystem capable of detecting missing packages, understanding dependency manifests, and automatically resolving installation issues. Just for python now.
+
+Acceptance Criteria:
+- Detects:
+  - missing imports
+  - missing packages
+  - dependency manifest drift
+  - invalid package references
+- Supports:
+  - pip
+  - uv
+  - poetry
+  - requirements.txt
+  - pyproject.toml
+- Can propose or apply dependency fixes
+- Can retry runs after dependency installation
+- Includes tests for dependency resolution flows
+
+
+- [x] TASK-007: Patch governor and diff safety system
+
+Dependencies:
+- TASK-004
+
+Description:
+Prevent runaway architectural rewrites and unrelated modifications during retry loops by analyzing diffs and rejecting unsafe patches.
+
+Acceptance Criteria:
+- Detects:
+  - unrelated file modifications
+  - excessive diff growth
+  - deletion-heavy patches
+  - architecture drift
+- Can reject unsafe patches before commit/application
+- Produces actionable rejection feedback for implementers
+- Supports configurable thresholds and policies
+- Includes tests for diff analysis and patch rejection behavior
+
+
+- [x] TASK-008: Integration sandbox runner
+
+Dependencies:
+- None
+
+Description:
+Add a one-command integration environment runner that creates isolated timestamped run directories for NightShift testing and orchestration experiments. This is the equivalent of doing --template with the tutorials
+
+Acceptance Criteria:
+- Adds command:
+  - `nightshift integ-run`
+- Creates timestamped run directories under:
+  - `integ_runs/`
+- Automatically:
+  - creates isolated venv
+  - installs project dependencies
+  - initializes clean template/project state
+- Adds `integ_runs/` to `.gitignore`
+- Persists:
+  - logs
+  - transcripts
+  - patches
+  - generated artifacts
+- Supports cleanup policies for old runs
+- Includes tests for sandbox creation and cleanup behavior
+
+
+- [x] TASK-009: Structured retry memory system
+
+Dependencies:
+- TASK-001
+- TASK-004
+
+Description:
+Persist compact structured summaries of previous attempts to prevent retry amnesia and repeated failed approaches.
+
+Acceptance Criteria:
+- Stores:
+  - attempted fixes
+  - failure causes
+  - rejected hypotheses
+  - successful observations
+- Produces compact retry summaries instead of raw log dumps
+- Retry summaries are injected into implementer context
+- Supports configurable memory compaction
+- Includes tests for retry memory summarization behavior
+
+
+- [x] TASK-010: Environment-aware execution diagnostics
+
+Dependencies:
+- TASK-001
+- TASK-006
+
+Description:
+Improve orchestration awareness of environment-level failures versus implementation-level failures to reduce wasted retries and false debugging paths.
+
+Acceptance Criteria:
+- Distinguishes:
+  - environment failures
+  - dependency failures
+  - fixture/resource failures
+  - implementation logic failures
+- Prevents implementation retries when environment is invalid
+- Surfaces actionable remediation guidance
+- Integrates with failure classifier and dependency manager
+- Includes tests for environment diagnostic behavior
+
+- [x] TASK-011: Update tutorials to reflect the previous changes to the templates as needed
+
+Description:
+Tutorials should have the newly added features when relevant.,
+
+Acceptance Criteria:
+- Tutorials have features
+
+- [x] TASK-012: Stage output should be more organized. Right now run/task/ produces many files and it is difficult to keep track of. Either sub folders for retries, appending for retries, or compacting, whichever makes sense for our use case.
+
+- [x] TASK-013: Cost, token, and runtime telemetry
+
+Dependencies:
+- TASK-005
+
+Description:
+Track orchestration cost, latency, retry counts, token usage, and success rates across agents and models. Generally telemetry for analyzing model efficiency and usage. Which model fixes bugs fastest?
+
+Acceptance Criteria:
+- Tracks token usage per agent and run
+- Tracks runtime duration and retry counts
+- Records success/failure metrics
+- Supports per-model statistics
+- Exposes telemetry summaries and reports
+- Includes tests for telemetry aggregation
+
+- [x] TASK-014: Repository semantic indexing system
+
+Dependencies:
+- None
+
+Description:
+Build lightweight semantic indexing over repositories so agents can retrieve relevant files, symbols, tests, and architecture context without loading excessive raw context.
+
+Acceptance Criteria:
+- Indexes symbols, files, imports, and tests
+- Supports semantic and keyword search
+- Returns compact relevant context snippets
+- Reduces prompt context size
+- Includes tests for retrieval quality
+
+
+- [x] TASK-015: Pastebin tutorial project template
+
+Dependencies:
+- TASK-008
+- TASK-005
+
+Description:
+Add a new tutorial project template for NightShift based on a small Pastebin/snippet-hosting service. This should work like the existing imageboard tutorial, but be simpler, more deterministic, and easier to use for testing agent orchestration. The template should be creatable with `--template`.
+
+Acceptance Criteria:
+- Adds a new template named `pastebin`
+- Supports creating the tutorial project with a command such as:
+  - `nightshift init --template tutorial-pastebin`
+- Template includes a small but realistic app with:
+  - snippet creation
+  - snippet viewing
+  - snippet listing
+  - optional expiration field
+  - tags or language field
+  - basic search/filtering
+- Includes a test suite with multiple incremental tasks suitable for agent testing
+- Avoids complex media/file-upload behavior from the imageboard tutorial
+- Uses deterministic fixtures and simple dependencies
+- Includes clear task descriptions for the agent to complete
+- Includes README instructions explaining the tutorial goals
+- Supports model fallback ordering for this template:
+  - `qwen2.5-coder:14b`
+  - `carstenuhlig/omnicoder-9b`
+  - `deepseek-coder-v2:16b`
+- If the first model fails or exceeds its retry budget, the next fallback model is attempted
+- Records which model handled each attempt
+- Includes tests for template creation and model fallback configuration
 ---
 
 # 17. Current Product Shape

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<body>
+  <h1>Snippets</h1>
+  <a href="/new">New snippet</a>
+  <form method="get" action="/snippets">
+    <input name="q" placeholder="Search">
+    <input name="language" placeholder="Language">
+    <input name="tag" placeholder="Tag">
+    <button type="submit">Filter</button>
+  </form>
+  <ul>
+    {% for snippet in snippets %}
+      <li><a href="/snippets/{{ snippet.id }}">{{ snippet.title }}</a> {{ snippet.language }} {{ snippet.tags }}</li>
+    {% endfor %}
+  </ul>
+</body>
+</html>

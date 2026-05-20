@@ -1,12 +1,9 @@
 # Bugfix TODO
 
 ## Some issues going with run --all
- reason=Stage 'review' requested unknown next stage 'None'.
+ reason=Stage 'review' requested unknown next stage 'None'. Not every time. I think there's a pattern that is out of place here. Maybe it's related to the last task success? Or the last run?
 
-## TASK-002 in imageboard tutorial tries to make an image
-tries to make an image for a test, I dont think it should do that.
-I think maybe some feature to create dummy files for tests would be useful
-Or maybe we have a little library of dummy files for use? Not sure how it would get an image otherwise.
+
 
 ## Going from individual tasks to --all fails
 

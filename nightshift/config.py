@@ -53,6 +53,7 @@ class StageConfig:
     id: str
     type: str
     agent: str | None = None
+    agent_pool: tuple[str, ...] = ()
     commands: tuple[str, ...] = ()
     output: str | None = None
     on_fail: str | None = None
@@ -61,6 +62,7 @@ class StageConfig:
     working_dir: Path | None = None
     max_files: int | None = None
     max_lines: int | None = None
+    max_delete_ratio: float | None = None
     forbidden_paths: tuple[str, ...] = ()
     mode: str | None = None
 
@@ -97,6 +99,7 @@ SUPPORTED_STAGE_TYPES = AGENT_STAGE_TYPES | COMMAND_STAGE_TYPES | {
     "patch_apply",
     "patch_validator",
     "repo_context",
+    "semantic_context",
     "summarize",
 }
 
@@ -286,6 +289,7 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
             )
 
         agent = _optional_string(stage_raw.get("agent"), f"{stage_context}.agent")
+        agent_pool = _string_tuple(stage_raw.get("agent_pool", []), f"{stage_context}.agent_pool")
         commands = _string_tuple(stage_raw.get("commands", []), f"{stage_context}.commands")
         timeout_seconds = _optional_int_or_none(
             stage_raw.get("timeout_seconds"),
@@ -296,33 +300,48 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
         working_dir_raw = _optional_string(stage_raw.get("working_dir"), f"{stage_context}.working_dir")
         max_files = _optional_int_or_none(stage_raw.get("max_files"), f"{stage_context}.max_files")
         max_lines = _optional_int_or_none(stage_raw.get("max_lines"), f"{stage_context}.max_lines")
+        max_delete_ratio = _optional_float_or_none(
+            stage_raw.get("max_delete_ratio"),
+            f"{stage_context}.max_delete_ratio",
+        )
         if max_files is not None and max_files <= 0:
             raise ConfigError(f"Config error: {stage_context}.max_files must be greater than zero.")
         if max_lines is not None and max_lines <= 0:
             raise ConfigError(f"Config error: {stage_context}.max_lines must be greater than zero.")
+        if max_delete_ratio is not None and not 0 <= max_delete_ratio <= 1:
+            raise ConfigError(f"Config error: {stage_context}.max_delete_ratio must be between 0 and 1.")
         mode = _optional_string(stage_raw.get("mode"), f"{stage_context}.mode")
         if stage_type == "patch_apply" and mode not in {None, "dry_run", "apply"}:
             raise ConfigError(
                 f"Config error: {stage_context}.mode must be 'dry_run' or 'apply'."
             )
 
+        effective_agent = agent or (agent_pool[0] if agent_pool else None)
+
         if stage_type in AGENT_STAGE_TYPES:
-            if agent is None:
+            if effective_agent is None:
                 raise ConfigError(f"Config error: agent stage '{stage_id}' must reference an agent.")
-            if agent not in agents:
+            if effective_agent not in agents:
                 defined = ", ".join(sorted(agents))
                 raise ConfigError(
                     f"Config error: pipeline stage '{stage_id}' references unknown agent "
-                    f"'{agent}'. Defined agents: {defined}."
+                    f"'{effective_agent}'. Defined agents: {defined}."
                 )
         if stage_type in {"code_writer", "file_writer"}:
-            if agent is None:
+            if effective_agent is None:
                 raise ConfigError(f"Config error: {stage_type} stage '{stage_id}' must reference an agent.")
-            if agent not in agents:
+            if effective_agent not in agents:
                 defined = ", ".join(sorted(agents))
                 raise ConfigError(
                     f"Config error: pipeline stage '{stage_id}' references unknown agent "
-                    f"'{agent}'. Defined agents: {defined}."
+                    f"'{effective_agent}'. Defined agents: {defined}."
+                )
+        for pooled_agent in agent_pool:
+            if pooled_agent not in agents:
+                defined = ", ".join(sorted(agents))
+                raise ConfigError(
+                    f"Config error: pipeline stage '{stage_id}' references unknown pooled agent "
+                    f"'{pooled_agent}'. Defined agents: {defined}."
                 )
         if stage_type == "patch_normalizer" and agent is not None and agent not in agents:
             defined = ", ".join(sorted(agents))
@@ -342,7 +361,8 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
             StageConfig(
                 id=stage_id,
                 type=stage_type,
-                agent=agent,
+                agent=effective_agent,
+                agent_pool=agent_pool,
                 commands=commands,
                 output=_optional_string(stage_raw.get("output"), f"{stage_context}.output"),
                 on_fail=_optional_string(stage_raw.get("on_fail"), f"{stage_context}.on_fail"),
@@ -351,6 +371,7 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
                 working_dir=Path(working_dir_raw) if working_dir_raw else None,
                 max_files=max_files,
                 max_lines=max_lines,
+                max_delete_ratio=max_delete_ratio,
                 forbidden_paths=_string_tuple(
                     stage_raw.get("forbidden_paths", []),
                     f"{stage_context}.forbidden_paths",

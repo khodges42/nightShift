@@ -18,7 +18,7 @@ Dependencies:
 - TASK-001
 
 Description:
-Add image attachment support for new threads and replies. Store uploaded image metadata in SQLite, save uploaded files under `static/uploads`, and generate thumbnails under `static/thumbs`.
+Add image attachment support for new threads and replies. Store uploaded image metadata in SQLite, save uploaded files under `static/uploads`, and generate thumbnails under `static/thumbs`. There is a test image in tests/test_images/test.png
 
 Acceptance Criteria:
 - Accepts image uploads for threads and replies

@@ -9,6 +9,7 @@ import sys
 from .config import validate_config
 from .errors import NightShiftError
 from .init import available_templates, init_project
+from .integ import create_integration_run
 from .pipeline import PipelineRunner
 from .runlog import RunLogger
 from .status import build_status, format_status
@@ -54,6 +55,16 @@ def build_parser() -> argparse.ArgumentParser:
     web_parser.add_argument("--config", default="nightshift.yaml", help="Config file to inspect.")
     web_parser.add_argument("--host", default="127.0.0.1", help="Host to bind.")
     web_parser.add_argument("--port", type=int, default=8765, help="Port to bind.")
+
+    integ_parser = subparsers.add_parser("integ-run", help="Create an isolated integration run directory.")
+    integ_parser.add_argument("--root", default=".", help="Repository root where integ_runs/ is created.")
+    integ_parser.add_argument(
+        "--template",
+        default="basic",
+        choices=available_templates(),
+        help="Template to initialize inside the sandbox.",
+    )
+    integ_parser.add_argument("--keep", type=int, help="Keep only the newest N old integration runs before creating a new one.")
 
     return parser
 
@@ -120,6 +131,13 @@ def main(argv: list[str] | None = None) -> int:
             config = validate_config(args.config)
             app = create_app(config.project.root, config.project.artifact_dir)
             app.run(host=args.host, port=args.port)
+            return 0
+
+        if args.command == "integ-run":
+            run = create_integration_run(Path(args.root), template=args.template, keep=args.keep)
+            print(f"Integration run: {run.directory}")
+            print(f"Venv: {run.venv_dir}")
+            print(f"Log: {run.log_path}")
             return 0
 
     except NightShiftError as exc:

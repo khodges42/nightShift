@@ -124,6 +124,36 @@ Other built-in real-model templates:
 ```bash
 nightshift init --template real-simple --root bookmarks-demo
 nightshift init --template real-long-running --root incident-service
+nightshift init --template tutorial-pastebin --root nightshift-pastebin
+```
+
+Create an isolated integration sandbox for a template:
+
+```bash
+python -m nightshift.cli integ-run --template tutorial-pastebin
+cd integ_runs/<timestamp>/project
+```
+
+Activate the generated virtual environment, then install and run the project.
+
+PowerShell:
+
+```powershell
+..\.venv\Scripts\Activate.ps1
+python -m pip install -e ..\..\..
+python -m pip install -e . pytest flask
+python -m nightshift.cli validate
+python -m nightshift.cli run --task TASK-001
+```
+
+Bash:
+
+```bash
+source ../.venv/bin/activate
+python -m pip install -e ../../..
+python -m pip install -e . pytest flask
+python -m nightshift.cli validate
+python -m nightshift.cli run --task TASK-001
 ```
 
 Open the read-only artifact dashboard:
@@ -344,6 +374,7 @@ Additional docs:
 - [Quickstart](QUICKSTART.md)
 - [Tutorial 01: imageboard with real local models](examples/tutorial/01-imageboard/README.md)
 - [Tutorial 02: Lisp with real local models](examples/tutorial/02-lisp/README.md)
+- [Tutorial 03: Pastebin with model fallback and telemetry](examples/tutorial/03-pastebin/README.md)
 - [Config reference](docs/config-reference.md)
 - [Artifact review workflow](docs/artifact-review.md)
 - [Troubleshooting](docs/troubleshooting.md)

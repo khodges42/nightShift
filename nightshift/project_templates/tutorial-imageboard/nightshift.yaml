@@ -44,6 +44,13 @@ agents:
     temperature: 0.1
     system_prompt: .nightshift/agents/reviewer.md
 
+  debugger:
+    backend: ollama
+    model: qwen2.5-coder:14b
+    role: debugger
+    temperature: 0.1
+    system_prompt: .nightshift/agents/debugger.md
+
 pipeline:
   max_task_retries: 3
   continue_on_task_failure: false
@@ -59,7 +66,8 @@ pipeline:
 
     - id: implement
       type: file_writer
-      agent: implementer
+      agent_pool:
+        - implementer
       output: proposed.patch
 
     - id: normalize
@@ -71,6 +79,7 @@ pipeline:
       output: patch-validation.md
       max_files: 10
       max_lines: 900
+      max_delete_ratio: 0.70
       on_fail: implement
 
     - id: apply_patch

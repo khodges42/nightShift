@@ -15,6 +15,7 @@ STARTER_FILES = {
     "agents/planner.md": templates.PLANNER_PROMPT,
     "agents/implementer.md": templates.IMPLEMENTER_PROMPT,
     "agents/reviewer.md": templates.REVIEWER_PROMPT,
+    "agents/debugger.md": templates.DEBUGGER_PROMPT,
 }
 
 IMAGEBOARD_FILES = {
@@ -23,6 +24,7 @@ IMAGEBOARD_FILES = {
     ".nightshift/agents/planner.md": templates.REAL_MODEL_PLANNER_PROMPT,
     ".nightshift/agents/implementer.md": templates.REAL_MODEL_IMPLEMENTER_PROMPT,
     ".nightshift/agents/reviewer.md": templates.REAL_MODEL_REVIEWER_PROMPT,
+    ".nightshift/agents/debugger.md": templates.REAL_MODEL_DEBUGGER_PROMPT,
     "README.md": templates.IMAGEBOARD_README,
     "src/imageboard/.gitkeep": "",
     "tests/.gitkeep": "",

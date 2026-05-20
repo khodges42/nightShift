@@ -52,6 +52,7 @@ coverage.xml
 cover/
 tiny-lisp-nightshift/
 nightshift-imageboard/
+integ_runs/
 
 # Translations
 *.mo

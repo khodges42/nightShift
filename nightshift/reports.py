@@ -50,6 +50,11 @@ class ReportGenerator:
             "stage-results.md",
             format_stage_results(task, status, reason, retry_count, stage_results),
         )
+        artifact_index_path = self.artifacts.write_stage_output(
+            task.id,
+            "artifact-index.md",
+            format_artifact_index(self.artifacts.create_task_dir(task.id).directory),
+        )
         final_notes_path = self.artifacts.write_final_task_notes(
             task.id,
             format_task_report(
@@ -61,6 +66,7 @@ class ReportGenerator:
                 modified_files=modified_files,
                 stage_results_path=stage_results_path,
                 context_out_path=context_out_path,
+                artifact_index_path=artifact_index_path,
                 experiment_label=self.experiment_label,
                 prompt_variant=self.prompt_variant,
             ),
@@ -138,6 +144,7 @@ def format_task_report(
     modified_files: list[str],
     stage_results_path: Path,
     context_out_path: Path | None,
+    artifact_index_path: Path | None,
     experiment_label: str | None = None,
     prompt_variant: str | None = None,
 ) -> str:
@@ -149,6 +156,8 @@ def format_task_report(
     ]
     if context_out_path is not None:
         artifact_lines.append(f"- Context out: `{context_out_path.name}`")
+    if artifact_index_path is not None:
+        artifact_lines.append(f"- Artifact index: `{artifact_index_path.name}`")
     modified = "\n".join(f"- `{path}`" for path in modified_files) if modified_files else "- Unavailable or none detected"
 
     return "\n".join(
@@ -184,6 +193,37 @@ def format_task_report(
             "",
         ]
     )
+
+
+def format_artifact_index(task_dir: Path) -> str:
+    groups: dict[str, list[str]] = {
+        "Core": [],
+        "Patch Flow": [],
+        "Diagnostics": [],
+        "Retries": [],
+        "Resources": [],
+        "Other": [],
+    }
+    for path in sorted(item for item in task_dir.rglob("*") if item.is_file()):
+        relative = path.relative_to(task_dir).as_posix()
+        target = "Other"
+        if relative in {"task.md", "context.md", "context-out.md", "stage-results.md", "task-completion.md", "final-notes.md"}:
+            target = "Core"
+        elif relative.endswith(".patch") or "patch-" in relative or "normalized" in relative:
+            target = "Patch Flow"
+        elif relative.startswith("diagnostics/") or "failure" in relative:
+            target = "Diagnostics"
+        elif relative.startswith("retries/") or "retry" in relative or "repair" in relative:
+            target = "Retries"
+        elif relative.startswith("resources/") or relative == "resource-requests.md":
+            target = "Resources"
+        groups[target].append(relative)
+    lines = ["# Artifact Index", ""]
+    for name, paths in groups.items():
+        lines.extend([f"## {name}", ""])
+        lines.extend(f"- `{path}`" for path in paths) if paths else lines.append("- None")
+        lines.append("")
+    return "\n".join(lines)
 
 
 def format_run_summary(

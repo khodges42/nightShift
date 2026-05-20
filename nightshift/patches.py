@@ -142,6 +142,7 @@ def validate_patch(
     safety: SafetyConfig,
     max_files: int = DEFAULT_MAX_FILES,
     max_changed_lines: int = DEFAULT_MAX_CHANGED_LINES,
+    max_delete_ratio: float | None = None,
     forbidden_paths: tuple[str, ...] = DEFAULT_FORBIDDEN_PATHS,
 ) -> PatchValidationResult:
     root = resolve_project_root(project_root)
@@ -153,11 +154,17 @@ def validate_patch(
         raise PipelineError(f"Patch validation failed: touches {len(files)} files, max is {max_files}.")
 
     changed_lines = _changed_line_count(patch)
+    deleted_lines = _deleted_line_count(patch)
     if changed_lines <= 0:
         raise PipelineError("Patch validation failed: patch has no changed lines.")
     if changed_lines > max_changed_lines:
         raise PipelineError(
             f"Patch validation failed: changes {changed_lines} lines, max is {max_changed_lines}."
+        )
+    if max_delete_ratio is not None and changed_lines > 0 and deleted_lines / changed_lines > max_delete_ratio:
+        raise PipelineError(
+            "Patch validation failed: deletion-heavy patch exceeds "
+            f"max_delete_ratio {max_delete_ratio:.2f}."
         )
 
     for path_text in files:
@@ -423,6 +430,21 @@ def _changed_line_count(patch: str) -> int:
         if not in_hunk or line.startswith("\\"):
             continue
         if line.startswith(("+", "-")):
+            count += 1
+    return count
+
+
+def _deleted_line_count(patch: str) -> int:
+    count = 0
+    in_hunk = False
+    for line in patch.splitlines():
+        if line.startswith("diff --git "):
+            in_hunk = False
+            continue
+        if line.startswith("@@"):
+            in_hunk = True
+            continue
+        if in_hunk and line.startswith("-") and not line.startswith("---"):
             count += 1
     return count
 

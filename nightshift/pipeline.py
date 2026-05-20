@@ -5,14 +5,18 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from pathlib import Path
 import re
+import subprocess
 
 from .agents import AgentExecutor
 from .artifacts import ArtifactStore
 from .commands import CommandExecutor
 from .config import COMMAND_STAGE_TYPES, NightShiftConfig, StageConfig
 from .context import ContextManager
+from .dependencies import diagnose_python_dependencies, format_dependency_diagnostic
+from .escalation import evaluate_retry_churn, format_escalation_decision
 from .errors import PipelineError
 from .errors import NightShiftError
+from .failures import classify_failure, format_failure_classification
 from .git import ensure_clean_worktree, write_diff_artifact, write_git_artifacts
 from .patches import (
     DEFAULT_FORBIDDEN_PATHS,
@@ -30,9 +34,18 @@ from .patches import (
 from .project_chart import build_project_context_chart
 from .reports import ReportGenerator
 from .repo_tools import RepoTools, extract_agent_stdout, parse_lookup_requests
+from .resources import format_resource_report, parse_resource_requests, satisfy_resource_requests
+from .retry_memory import RetryMemoryEntry, entry_from_stage, summarize_retry_memory
+from .semantic_index import (
+    build_semantic_index,
+    format_search_results,
+    format_semantic_index,
+    search_index,
+)
 from .runlog import RunLogger
 from .stages import StageResult
 from .tasks import Task, mark_task_completed
+from .telemetry import TelemetryEntry, format_telemetry_summary, telemetry_from_stage_output
 
 
 @dataclass(frozen=True)
@@ -126,6 +139,8 @@ class PipelineRunner:
         stage_results: list[StageResult] = []
         previous_outputs: dict[str, str] = {}
         retry_notes: list[str] = []
+        retry_memory: list[RetryMemoryEntry] = []
+        telemetry_entries: list[TelemetryEntry] = []
         retry_count = 0
         index = 0
         final_status = "complete"
@@ -160,6 +175,8 @@ class PipelineRunner:
             if stage.id in previous_outputs:
                 del previous_outputs[stage.id]
             previous_outputs[stage.id] = self._read_output(result.output_path)
+            telemetry_entries.append(self._telemetry_entry(stage, result, retry_count))
+            self._write_telemetry(task.id, telemetry_entries)
             self.logger.event(
                 "stage.finish",
                 "Finished stage",
@@ -195,6 +212,12 @@ class PipelineRunner:
                 continue
 
             target_stage = stage.on_fail or result.next_stage
+            analysis_note = self._write_failure_diagnostics(stage, task, result, retry_count)
+            if analysis_note:
+                retry_notes.append(analysis_note)
+            debugger_note = self._run_debugger_if_configured(task, result, retry_notes)
+            if debugger_note:
+                retry_notes.append(debugger_note)
             if target_stage:
                 if retry_count >= self.config.pipeline.max_task_retries:
                     final_status = "failed"
@@ -209,6 +232,26 @@ class PipelineRunner:
                     )
                     break
                 retry_count += 1
+                memory_entry = entry_from_stage(retry_count, result, target_stage)
+                retry_memory.append(memory_entry)
+                self.artifacts.write_stage_output(
+                    task.id,
+                    "retry-memory.md",
+                    summarize_retry_memory(tuple(retry_memory)),
+                )
+                decision = evaluate_retry_churn(
+                    tuple(retry_memory),
+                    retry_budget=self.config.pipeline.max_task_retries + 1,
+                )
+                self.artifacts.write_stage_output(
+                    task.id,
+                    "escalation-policy.md",
+                    format_escalation_decision(decision),
+                )
+                if decision.should_stop:
+                    final_status = "failed"
+                    final_reason = f"Escalation policy stopped retries: {decision.reason}"
+                    break
                 self.logger.event(
                     "stage.retry",
                     "Redirecting after stage result",
@@ -260,6 +303,7 @@ class PipelineRunner:
             stage_results,
             context_out_path=context_out_path,
         )
+        self._write_telemetry(task.id, telemetry_entries)
         self.logger.event(
             "task.finish",
             "Finished task",
@@ -361,7 +405,7 @@ class PipelineRunner:
         if stage.type in {"agent", "agent_review", "review"}:
             context = self.context.read_context(task, retry_notes)
             result = self.agent_executor.run_stage(
-                stage,
+                self._stage_for_retry_agent(stage, retry_count),
                 task,
                 previous_outputs,
                 retry_notes,
@@ -370,6 +414,9 @@ class PipelineRunner:
                 retry_context=context.retry_context,
             )
             if stage.type == "agent":
+                resource_result = self._maybe_satisfy_resource_request(stage, task, result)
+                if resource_result is not None:
+                    return resource_result
                 return self._maybe_rerun_agent_with_repo_lookup(
                     stage,
                     task,
@@ -411,6 +458,33 @@ class PipelineRunner:
                 status="pass",
                 reason="Context pack written.",
                 output_path=str(output_path.relative_to(self.config.project.root)),
+            )
+        if stage.type == "semantic_context":
+            index = build_semantic_index(self.config.project.root, self.config.safety)
+            index_path = self.artifacts.write_stage_output(
+                task.id,
+                "semantic-index.md",
+                format_semantic_index(index),
+            )
+            query = " ".join([task.title, task.description, *task.acceptance_criteria])
+            context_path = self.artifacts.write_stage_output(
+                task.id,
+                stage.output or "semantic-context.md",
+                format_search_results(search_index(index, query, limit=8), query),
+            )
+            self.logger.event(
+                "artifact.write",
+                "Wrote semantic context",
+                stage_id=stage.id,
+                task_id=task.id,
+                artifact_path=context_path.relative_to(self.config.project.root),
+            )
+            return StageResult(
+                stage_id=stage.id,
+                status="pass",
+                reason="Semantic context written.",
+                output_path=str(context_path.relative_to(self.config.project.root)),
+                context_update=f"Semantic index: {index_path.relative_to(self.config.project.root).as_posix()}",
             )
         if stage.type == "summarize":
             output_path = self.artifacts.write_stage_output(
@@ -703,7 +777,10 @@ class PipelineRunner:
 
     def _writer_agent_stage(self, stage: StageConfig, retry_count: int) -> StageConfig:
         suffix = f"-{retry_count}" if retry_count else ""
-        return replace(stage, output=f"{stage.id}-agent-output{suffix}.md")
+        return replace(
+            self._stage_for_retry_agent(stage, retry_count),
+            output=f"{stage.id}-agent-output{suffix}.md",
+        )
 
     def _stage_after_patch_flow(self, current_stage_id: str) -> str | None:
         stages = list(self.config.pipeline.stages)
@@ -791,6 +868,7 @@ class PipelineRunner:
                 self.config.safety,
                 max_files=stage.max_files or DEFAULT_MAX_FILES,
                 max_changed_lines=stage.max_lines or DEFAULT_MAX_CHANGED_LINES,
+                max_delete_ratio=stage.max_delete_ratio,
                 forbidden_paths=stage.forbidden_paths or DEFAULT_FORBIDDEN_PATHS,
             )
         except PipelineError as exc:
@@ -834,6 +912,7 @@ class PipelineRunner:
                 self.config.safety,
                 max_files=stage.max_files or DEFAULT_MAX_FILES,
                 max_changed_lines=stage.max_lines or DEFAULT_MAX_CHANGED_LINES,
+                max_delete_ratio=stage.max_delete_ratio,
                 forbidden_paths=stage.forbidden_paths or DEFAULT_FORBIDDEN_PATHS,
             )
         except PipelineError as exc:
@@ -885,6 +964,163 @@ class PipelineRunner:
     def _latest_task_artifact(self, task_id: str, filename: str) -> Path | None:
         path = self.artifacts.create_task_dir(task_id).directory / filename
         return path if path.exists() else None
+
+    def _stage_for_retry_agent(self, stage: StageConfig, retry_count: int) -> StageConfig:
+        if not stage.agent_pool:
+            return stage
+        index = min(retry_count, len(stage.agent_pool) - 1)
+        return replace(stage, agent=stage.agent_pool[index])
+
+    def _maybe_satisfy_resource_request(
+        self,
+        stage: StageConfig,
+        task: Task,
+        result: StageResult,
+    ) -> StageResult | None:
+        output_text = self._read_output(result.output_path)
+        requests = parse_resource_requests(extract_agent_stdout(output_text))
+        if not requests:
+            return None
+        paths = satisfy_resource_requests(self.artifacts, task.id, requests)
+        report_path = self.artifacts.write_stage_output(
+            task.id,
+            "resource-requests.md",
+            format_resource_report(requests, paths, self.config.project.root),
+        )
+        return StageResult(
+            stage.id,
+            "pass",
+            "Blocked resource requests were satisfied in the active run directory.",
+            output_path=str(report_path.relative_to(self.config.project.root)),
+            context_update=(
+                "Generated run-local resources: "
+                + ", ".join(path.relative_to(self.config.project.root).as_posix() for path in paths)
+            ),
+        )
+
+    def _write_failure_diagnostics(
+        self,
+        stage: StageConfig,
+        task: Task,
+        result: StageResult,
+        retry_count: int,
+    ) -> str:
+        output = self._read_output(result.output_path)
+        if not output and not result.reason:
+            return ""
+        exit_code = _extract_exit_code(output) or _extract_exit_code(result.reason)
+        modified_files = self._modified_files()
+        classification = classify_failure(
+            "\n".join([result.reason, output]),
+            exit_code=exit_code,
+            modified_files=modified_files,
+        )
+        filename = f"diagnostics/{stage.id}-failure"
+        if retry_count:
+            filename += f"-retry-{retry_count}"
+        filename += ".md"
+        diagnostic_path = self.artifacts.write_stage_output(
+            task.id,
+            filename,
+            format_failure_classification(
+                classification,
+                exit_code=exit_code,
+                modified_files=modified_files,
+            ),
+        )
+        if classification.category == "missing dependency":
+            dependency_path = self.artifacts.write_stage_output(
+                task.id,
+                "diagnostics/dependency-diagnostic.md",
+                format_dependency_diagnostic(
+                    diagnose_python_dependencies(self.config.project.root, output)
+                ),
+            )
+            return (
+                f"Failure classification: {classification.category}; "
+                f"diagnostic: {diagnostic_path.relative_to(self.config.project.root).as_posix()}; "
+                f"dependency diagnostic: {dependency_path.relative_to(self.config.project.root).as_posix()}."
+            )
+        return (
+            f"Failure classification: {classification.category}; "
+            f"root cause: {classification.probable_root_cause}; "
+            f"diagnostic: {diagnostic_path.relative_to(self.config.project.root).as_posix()}."
+        )
+
+    def _run_debugger_if_configured(
+        self,
+        task: Task,
+        result: StageResult,
+        retry_notes: list[str],
+    ) -> str:
+        debugger_id = next(
+            (
+                agent_id
+                for agent_id, agent in self.config.agents.items()
+                if agent.role == "debugger" or agent_id == "debugger"
+            ),
+            None,
+        )
+        if debugger_id is None:
+            return ""
+        stage = StageConfig(
+            id="debugger",
+            type="agent",
+            agent=debugger_id,
+            output="debugger.md",
+        )
+        output = self._read_output(result.output_path)
+        context = self.context.read_context(task, retry_notes)
+        debug_result = self.agent_executor.run_stage(
+            stage,
+            task,
+            {"failed_stage": result.reason, "failure_output": output},
+            retry_notes,
+            project_context=context.project_context,
+            task_context=context.task_context,
+            retry_context=context.retry_context,
+        )
+        return f"Debugger output: {debug_result.output_path or 'none'}."
+
+    def _modified_files(self) -> tuple[str, ...]:
+        completed = subprocess.run(
+            ["git", "status", "--short"],
+            cwd=self.config.project.root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if completed.returncode != 0:
+            return ()
+        files: list[str] = []
+        for line in completed.stdout.splitlines():
+            if len(line) > 3:
+                files.append(line[3:].strip())
+        return tuple(files)
+
+    def _telemetry_entry(
+        self,
+        stage: StageConfig,
+        result: StageResult,
+        retry_count: int,
+    ) -> TelemetryEntry:
+        effective_stage = self._stage_for_retry_agent(stage, retry_count)
+        agent = self.config.agents.get(effective_stage.agent) if effective_stage.agent else None
+        return telemetry_from_stage_output(
+            stage_id=result.stage_id,
+            stage_type=stage.type,
+            status=result.status,
+            output=self._read_output(result.output_path),
+            retry_count=retry_count,
+            agent_id=agent.id if agent else None,
+            model=agent.model if agent else None,
+        )
+
+    def _write_telemetry(self, task_id: str, entries: list[TelemetryEntry]) -> None:
+        summary = format_telemetry_summary(tuple(entries))
+        self.artifacts.write_stage_output(task_id, "telemetry-summary.md", summary)
+        self.artifacts.run_dir.joinpath("telemetry-summary.md").write_text(summary, encoding="utf-8")
 
     def _maybe_rerun_agent_with_repo_lookup(
         self,
@@ -1126,6 +1362,17 @@ def _attempt_filename(filename: str, retry_count: int) -> str:
     else:
         name = f"{path.name}-{retry_count}"
     return path.with_name(name).as_posix()
+
+
+def _extract_exit_code(text: str) -> int | None:
+    match = re.search(r"Exit code:\s*(-?\d+)|code\s+(-?\d+)", text)
+    if not match:
+        return None
+    value = match.group(1) or match.group(2)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def format_aggregate_run_summary(results: list[PipelineResult], status: str, reason: str) -> str:
