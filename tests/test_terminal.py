@@ -6,7 +6,13 @@ from unittest.mock import patch
 
 from nightshift.artifacts import ArtifactStore
 from nightshift.runlog import RunLogger
-from nightshift.terminal import format_banner, format_console_event_line
+from nightshift.terminal import (
+    HOTDOG_ANIMATIONS,
+    TerminalAnimation,
+    animation_frames,
+    format_banner,
+    format_console_event_line,
+)
 
 
 class FakeTTY(StringIO):
@@ -24,6 +30,19 @@ class TerminalStylingTests(unittest.TestCase):
         banner = format_banner(stream=FakeTTY())
         self.assertIn("NightShift", banner)
         self.assertIn("\x1b[", banner)
+
+    def test_animation_frames_fall_back_to_agent_thinking(self) -> None:
+        self.assertEqual(animation_frames("missing"), tuple(HOTDOG_ANIMATIONS["agent_thinking"]))
+        self.assertEqual(animation_frames("classic_dance"), tuple(HOTDOG_ANIMATIONS["classic_dance"]))
+
+    def test_terminal_animation_is_disabled_for_non_tty(self) -> None:
+        stream = StringIO()
+        animation = TerminalAnimation(stream=stream)
+
+        with animation:
+            pass
+
+        self.assertEqual(stream.getvalue(), "")
 
     def test_console_event_line_colors_success_and_failure(self) -> None:
         success = format_console_event_line(

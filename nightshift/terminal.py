@@ -6,6 +6,8 @@ import os
 import sys
 from typing import TextIO
 import random
+import threading
+import time
 
 from .version import display_version
 
@@ -40,6 +42,167 @@ BANNER_MESSAGES = [
     "sleep is temporary. infrastructure is forever.",
 ]
 quote = random.choice(BANNER_MESSAGES)
+
+HOTDOG_ANIMATIONS = {
+    "classic_dance": [
+        "🌭",
+        "ヽ(🌭)ﾉ",
+        "(🌭)",
+        "(🌭)",
+        "(🌭)",
+    ],
+    "shuffle_mode": [
+        " (🌭) ",
+        " (🌭) ",
+        "<(🌭<)",
+        "(>🌭)>",
+        "~(🌭)~",
+    ],
+    "gremlin_energy": [
+        "(ﾉ🌭)ﾉ",
+        "ᕕ(🌭)ᕗ",
+        "^(🌭)^",
+        "(🌭)b",
+        "(🌭)",
+    ],
+    "roller_grill": [
+        "🌭",
+        "🌭",
+        "🌭",
+        "🌭",
+        "🌭",
+    ],
+    "ascending_glizzy": [
+        "🌭",
+        " 🌭",
+        "  🌭",
+        "   ",
+        "🌭",
+    ],
+    "agent_thinking": [
+        "🌭 .",
+        "🌭 ..",
+        "🌭 ...",
+        "🌭 ....",
+        "🌭 ???",
+    ],
+    "tubular_offering": [
+        " つ 🌭_🌭 つ",
+        " つ🌭 _🌭 つ",
+        " つ 🌭🌭 つ",
+        " つ🌭🌭_ つ",
+        " つ 🌭_🌭 つ",
+    ],
+    "tubular_offering_wobble": [
+        " つ 🌭_🌭 つ",
+        " つ 🌭~🌭 つ",
+        " つ ~🌭~ つ",
+        " つ 🌭~🌭 つ",
+        " つ 🌭_🌭 つ",
+    ],
+    "chaotic_summoning": [
+        " つ 🌭_🌭 つ",
+        " つ 🌭 つ",
+        " つ 🌭🔥 つ",
+        " つ 🌭 つ",
+        " つ 🌭_🌭 つ",
+    ],
+    "hotdog_ritual_dance": [
+        "( ಠ_ಠ)🌭(ಠ_ಠ )",
+        "( ಠ_ಠ)🌭(ಠ_ಠ )",
+        "( ಠ_ಠ) 🌭 (ಠ_ಠ )",
+        "( ಠ_ಠ)  🌭  (ಠ_ಠ )",
+        "( ಠ_ಠ)🌭(ಠ_ಠ )",
+    ],
+    "ritual_side_to_side": [
+        "( ಠ_ಠ)🌭(ಠ_ಠ )",
+        "( ಠ_ಠ) 🌭(ಠ_ಠ )",
+        "( ಠ_ಠ)  🌭(ಠ_ಠ )",
+        "( ಠ_ಠ) (ಠ_ಠ )",
+        "( ಠ_ಠ)🌭(ಠ_ಠ )",
+    ],
+    "full_rave_mode": [
+        "( ಠ_ಠ)🌭(ಠ_ಠ )",
+        "(ಠ_ಠ )🌭( ಠ_ಠ)",
+        "( ಠ_ಠ)🌭(ಠ_ಠ )",
+        "(ಠ_ಠ )🔥🌭🔥( ಠ_ಠ)",
+        "( ಠ_ಠ)🌭(ಠ_ಠ )",
+    ],
+    "terminal_cult_initiation": [
+        "( ಠ_ಠ)     (ಠ_ಠ )",
+        "( ಠ_ಠ)🌭    (ಠ_ಠ )",
+        "( ಠ_ಠ) 🌭   (ಠ_ಠ )",
+        "( ಠ_ಠ)  🌭  (ಠ_ಠ )",
+        "( ಠ_ಠ)   🌭 (ಠ_ಠ )",
+    ],
+}
+
+
+class TerminalAnimation:
+    """Transient terminal status animation."""
+
+    def __init__(
+        self,
+        name: str = "agent_thinking",
+        *,
+        message: str = "NightShift running",
+        stream: TextIO | None = None,
+        interval_seconds: float = 0.18,
+        enabled: bool = True,
+    ) -> None:
+        self.frames = animation_frames(name)
+        self.message = message
+        self.stream = stream or sys.stderr
+        self.interval_seconds = interval_seconds
+        self.enabled = enabled and should_style(self.stream)
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._width = 0
+
+    def __enter__(self) -> "TerminalAnimation":
+        self.start()
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.stop()
+
+    def start(self) -> None:
+        if not self.enabled or self._thread is not None:
+            return
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        if self._thread is None:
+            return
+        self._stop.set()
+        self._thread.join(timeout=1)
+        self._clear()
+        self._thread = None
+
+    def _run(self) -> None:
+        index = 0
+        while not self._stop.is_set():
+            frame = self.frames[index % len(self.frames)]
+            text = f"{frame} {self.message}"
+            self._width = max(self._width, len(text))
+            self.stream.write("\r" + text.ljust(self._width))
+            self.stream.flush()
+            index += 1
+            self._stop.wait(self.interval_seconds)
+
+    def _clear(self) -> None:
+        if not self.enabled:
+            return
+        self.stream.write("\r" + (" " * self._width) + "\r")
+        self.stream.flush()
+
+
+def animation_frames(name: str) -> tuple[str, ...]:
+    frames = HOTDOG_ANIMATIONS.get(name)
+    if not frames:
+        frames = HOTDOG_ANIMATIONS["agent_thinking"]
+    return tuple(frames)
 
 def should_style(stream: TextIO | None = None) -> bool:
     stream = stream or sys.stdout

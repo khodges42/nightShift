@@ -14,7 +14,7 @@ from .integ_setup import format_setup_result, setup_python_project
 from .pipeline import PipelineRunner
 from .runlog import RunLogger
 from .status import build_status, format_status
-from .terminal import format_banner, style_text
+from .terminal import HOTDOG_ANIMATIONS, TerminalAnimation, format_banner, style_text
 from .tasks import (
     ensure_dependencies_satisfied,
     parse_task_file,
@@ -49,6 +49,13 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--config", default="nightshift.yaml", help="Config file to use.")
     run_parser.add_argument("--task", help="Specific task id to run.")
     run_parser.add_argument("--all", action="store_true", help="Run all runnable incomplete tasks.")
+    run_parser.add_argument(
+        "--animation",
+        default="agent_thinking",
+        choices=tuple(sorted(HOTDOG_ANIMATIONS)),
+        help="Terminal animation to show while the run is active.",
+    )
+    run_parser.add_argument("--no-animation", action="store_true", help="Disable terminal animation.")
 
     status_parser = subparsers.add_parser("status", help="Inspect NightShift project status.")
     status_parser.add_argument("--config", default="nightshift.yaml", help="Config file to inspect.")
@@ -140,7 +147,12 @@ def main(argv: list[str] | None = None) -> int:
             runner = PipelineRunner(config, logger=RunLogger(console=print))
             if args.all:
                 selected = [task for task in tasks if not task.completed]
-                result = runner.run_tasks(selected)
+                with TerminalAnimation(
+                    args.animation,
+                    message="NightShift running all tasks",
+                    enabled=not args.no_animation,
+                ):
+                    result = runner.run_tasks(selected)
                 print(f"Status: {result.status}")
                 print(f"Tasks run: {len(result.task_results)}")
                 print(f"Completed: {result.completed_count}")
@@ -150,7 +162,12 @@ def main(argv: list[str] | None = None) -> int:
 
             task = select_task_by_id(tasks, args.task) if args.task else select_next_runnable_task(tasks)
             ensure_dependencies_satisfied(tasks, task)
-            result = runner.run_task(task)
+            with TerminalAnimation(
+                args.animation,
+                message=f"NightShift running {task.id}",
+                enabled=not args.no_animation,
+            ):
+                result = runner.run_task(task)
             print(f"Task: {result.task_id}")
             print(style_text(f"Status: {result.status}", color=_status_color(result.status), bold=True))
             print(f"Retries: {result.retry_count}")
