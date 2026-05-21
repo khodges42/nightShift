@@ -529,10 +529,11 @@ class PipelineRunner:
                 format_semantic_index(index),
             )
             query = " ".join([task.title, task.description, *task.acceptance_criteria])
+            results = _task_semantic_results(index, query, task.id)
             context_path = self.artifacts.write_stage_output(
                 task.id,
                 stage.output or "semantic-context.md",
-                format_search_results(search_index(index, query, limit=8), query),
+                format_search_results(results, query),
             )
             self.logger.event(
                 "artifact.write",
@@ -1246,15 +1247,17 @@ class PipelineRunner:
     def _build_context_pack(self, task: Task) -> str:
         terms = _task_search_terms(task)
         lookup_paths = self.config.safety.scoped_paths or (".",)
-        files = self._list_context_files(lookup_paths)
+        files = self._list_context_files(lookup_paths, task.id)
         grep_sections: list[str] = []
         for term in terms[:5]:
             scoped_results = []
             for path in lookup_paths:
+                grep_output = self.repo_tools.grep(re.escape(term), path, max_matches=20).rstrip()
+                grep_output = _filter_future_task_test_lines(grep_output, task.id)
                 scoped_results.append(
                     f"#### Path: {path}\n\n"
                     "```text\n"
-                    f"{self.repo_tools.grep(re.escape(term), path, max_matches=20).rstrip()}\n"
+                    f"{grep_output}\n"
                     "```"
                 )
             grep_sections.extend(
@@ -1294,13 +1297,15 @@ class PipelineRunner:
             ]
         )
 
-    def _list_context_files(self, paths: tuple[str, ...]) -> str:
+    def _list_context_files(self, paths: tuple[str, ...], task_id: str) -> str:
         sections: list[str] = []
         for path in paths:
+            files = self.repo_tools.list_files(path, pattern="*", max_files=80).rstrip()
+            files = _filter_future_task_test_lines(files, task_id)
             sections.extend(
                 [
                     f"## Path: {path}",
-                    self.repo_tools.list_files(path, pattern="*", max_files=80).rstrip(),
+                    files,
                     "",
                 ]
             )
@@ -1478,6 +1483,39 @@ def _extract_exit_code(text: str) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _task_semantic_results(index, query: str, task_id: str):
+    current_test_path = _current_task_test_path(task_id)
+    current = tuple(item for item in index if item.path == current_test_path)
+    current_paths = {item.path for item in current}
+    searched = search_index(index, query, limit=8)
+    filtered = tuple(
+        item
+        for item in searched
+        if item.path not in current_paths and not _future_task_test_path(item.path, current_test_path)
+    )
+    return (*current, *filtered)[:8]
+
+
+def _future_task_test_path(path: str, current_test_path: str) -> bool:
+    return bool(re.fullmatch(r"tests/test_task\d+\.py", path)) and path != current_test_path
+
+
+def _current_task_test_path(task_id: str) -> str:
+    return f"tests/test_{task_id.lower().replace('-', '')}.py"
+
+
+def _filter_future_task_test_lines(text: str, task_id: str) -> str:
+    current_test_path = _current_task_test_path(task_id)
+    kept: list[str] = []
+    for line in text.splitlines():
+        normalized = line.replace("\\", "/")
+        matches = re.findall(r"tests/test_task\d+\.py", normalized)
+        if matches and all(path != current_test_path for path in matches):
+            continue
+        kept.append(line)
+    return "\n".join(kept)
 
 
 def _repeated_protected_path_violation(entries: tuple[RetryMemoryEntry, ...]) -> bool:

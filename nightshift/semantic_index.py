@@ -126,6 +126,8 @@ def _skip(path: Path, root: Path) -> bool:
     parts = set(Path(relative).parts)
     if parts & {".git", ".nightshift", "__pycache__", ".venv", "venv", "integ_runs"}:
         return True
+    if any(part.endswith(".egg-info") for part in parts):
+        return True
     return path.suffix.lower() not in {".py", ".md", ".txt", ".yaml", ".yml", ".toml", ".html", ".css", ".js"}
 
 

@@ -71,8 +71,13 @@ class TelemetryAndIndexTests(unittest.TestCase):
             root = Path(directory)
             (root / "src").mkdir()
             (root / "tests").mkdir()
+            (root / "src" / "demo.egg-info").mkdir()
             (root / "src" / "service.py").write_text(
                 "import sqlite3\n\nclass SnippetStore:\n    pass\n\ndef create_snippet():\n    return True\n",
+                encoding="utf-8",
+            )
+            (root / "src" / "demo.egg-info" / "PKG-INFO").write_text(
+                "Name: generated-metadata\n",
                 encoding="utf-8",
             )
             (root / "tests" / "test_service.py").write_text(
@@ -91,6 +96,7 @@ class TelemetryAndIndexTests(unittest.TestCase):
 
             self.assertTrue(any("create_snippet" in item.symbols for item in index))
             self.assertTrue(any(item.path == "src/service.py" for item in results))
+            self.assertFalse(any(".egg-info" in item.path for item in index))
 
     def test_semantic_context_stage_writes_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -107,6 +113,66 @@ class TelemetryAndIndexTests(unittest.TestCase):
             self.assertEqual(result.status, "complete")
             self.assertTrue((task_dir / "semantic-index.md").exists())
             self.assertTrue((task_dir / "semantic-context.md").exists())
+
+    def test_semantic_context_prefers_current_task_test_and_excludes_future_task_tests(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            (root / "tests").mkdir(exist_ok=True)
+            (root / "tests" / "test_task001.py").write_text(
+                "def test_create_snippet_returns_id():\n    assert True\n",
+                encoding="utf-8",
+            )
+            (root / "tests" / "test_task002.py").write_text(
+                "def test_create_snippet_accepts_language_and_tags():\n    assert True\n",
+                encoding="utf-8",
+            )
+            stages = (StageConfig(id="semantic", type="semantic_context", output="semantic-context.md"),)
+            config = make_config(root, stages)
+            runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+
+            result = runner.run_task(parse_tasks(TASK_MD)[0])
+
+            task_dir = root / ".nightshift" / "runs" / "test-run" / "tasks" / "TASK-001"
+            context = (task_dir / "semantic-context.md").read_text(encoding="utf-8")
+            self.assertEqual(result.status, "complete")
+            self.assertIn("## `tests/test_task001.py`", context)
+            self.assertNotIn("## `tests/test_task002.py`", context)
+
+    def test_repo_context_excludes_future_task_test_hits(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            (root / "tests").mkdir(exist_ok=True)
+            (root / "tests" / "test_task001.py").write_text(
+                "def test_create_snippet_returns_id():\n    assert True\n",
+                encoding="utf-8",
+            )
+            (root / "tests" / "test_task002.py").write_text(
+                "def test_create_snippet_accepts_language_and_tags():\n    assert True\n",
+                encoding="utf-8",
+            )
+            task_md = """# Tasks
+
+- [ ] TASK-001: Snippet creation
+
+Description:
+Create snippets.
+
+Acceptance Criteria:
+- POST /snippets creates a snippet
+"""
+            stages = (StageConfig(id="context", type="repo_context", output="context-pack.md"),)
+            config = make_config(root, stages)
+            runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+
+            result = runner.run_task(parse_tasks(task_md)[0])
+
+            task_dir = root / ".nightshift" / "runs" / "test-run" / "tasks" / "TASK-001"
+            context = (task_dir / "context-pack.md").read_text(encoding="utf-8")
+            self.assertEqual(result.status, "complete")
+            self.assertIn("tests/test_task001.py", context)
+            self.assertNotIn("tests/test_task002.py", context)
 
 
 if __name__ == "__main__":
