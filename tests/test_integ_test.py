@@ -11,7 +11,7 @@ class IntegrationTestCommandTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             result = run_integration_test(
                 directory,
-                template="tutorial-pastebin",
+                template="tutorial-deaddrop",
                 task="TASK-001",
                 dry_run=True,
             )

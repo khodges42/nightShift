@@ -147,13 +147,13 @@ Supported fixture types are `png`, `jpg`, `json`, `sqlite`, `text`, and `blob`.
 Create a local integration sandbox from the NightShift repository root:
 
 ```bash
-python -m nightshift.cli integ-run --template tutorial-pastebin
+python -m nightshift.cli integ-run --template tutorial-deaddrop
 ```
 
 Create, set up, validate, and run one task from the generated project directory:
 
 ```bash
-python -m nightshift.cli integ-test --template tutorial-pastebin --task TASK-001
+python -m nightshift.cli integ-test --template tutorial-deaddrop --task TASK-001
 ```
 
 Set up the generated Python project:
@@ -185,9 +185,9 @@ python -m nightshift.cli integ-report --latest
 To clean up old sandboxes before creating a new one, keep only the newest three existing runs:
 
 ```bash
-python -m nightshift.cli integ-run --template tutorial-pastebin --keep 3
+python -m nightshift.cli integ-run --template tutorial-deaddrop --keep 3
 ```
 
-## Pastebin Tutorial
+## DeadDrop Tutorial
 
-`nightshift init --template tutorial-pastebin` creates a small Flask snippet-hosting target with deterministic tests and incremental NightShift tasks. Its pipeline includes semantic context retrieval, telemetry, debugger support, fixed task-specific tests, and a single default `qwen3-coder:30b` model path.
+`nightshift init --template tutorial-deaddrop` creates a small Flask snippet sharing utility with deterministic tests and incremental NightShift tasks. Its pipeline includes semantic context retrieval, telemetry, debugger support, fixed task-specific tests, and a single default `qwen3-coder:30b` model path.

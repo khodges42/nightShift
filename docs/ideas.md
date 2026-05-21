@@ -14,7 +14,7 @@ Status: implemented.
 Implemented command:
 
 ```powershell
-python -m nightshift.cli integ-test --template tutorial-pastebin --task TASK-001
+python -m nightshift.cli integ-test --template tutorial-deaddrop --task TASK-001
 ```
 
 It creates the integration sandbox, sets up the venv, runs validation through setup, runs the task from the generated project directory, and prints the artifact root. Use `--dry-run` to preview the setup and task command.
@@ -24,7 +24,7 @@ Running integration tests is still too manual.
 Current process:
 
 - install the current version of NightShift
-- run `python -m nightshift.cli integ-run --template tutorial-pastebin --setup`
+- run `python -m nightshift.cli integ-run --template tutorial-deaddrop --setup`
 - copy the activation line from the output and run it
 - `cd` into the generated directory
 - run the task there, because running from the repo root does not find `nightshift.yaml`
@@ -34,7 +34,7 @@ Recommendation: implement a wrapper command, not just a loose script.
 Target command:
 
 ```powershell
-python -m nightshift.cli integ-test --template tutorial-pastebin --task TASK-001
+python -m nightshift.cli integ-test --template tutorial-deaddrop --task TASK-001
 ```
 
 It should:
@@ -49,34 +49,34 @@ It should:
 Useful variants:
 
 ```powershell
-python -m nightshift.cli integ-test --template tutorial-pastebin --all
-python -m nightshift.cli integ-test --template tutorial-pastebin --task TASK-002 --keep 3
+python -m nightshift.cli integ-test --template tutorial-deaddrop --all
+python -m nightshift.cli integ-test --template tutorial-deaddrop --task TASK-002 --keep 3
 ```
 
 The base-directory config issue may not be a core bug, but it is bad UX. The wrapper should handle `cwd` correctly.
 
-## P0/P1: Remove Multi-Candidate Workflow From Default Pastebin
+## P0/P1: Remove Multi-Candidate Workflow From Default DeadDrop
 
-Status: implemented for the default pastebin template and tutorial example.
+Status: implemented for the default DeadDrop template and tutorial example.
 
 Original idea:
 
 - The multi-candidate workflow does not add as much as expected.
 - Keep it as an example, maybe `example-multiagent`.
 
-Recommendation: yes. Remove it from the default pastebin tutorial.
+Recommendation: yes. Remove it from the default DeadDrop tutorial.
 
 Reason:
 
-- Pastebin is becoming the reliability harness.
+- DeadDrop is becoming the reliability harness.
 - Multi-candidate fallback makes artifacts harder to reason about.
 - It adds model variability while we are still debugging pipeline behavior.
 
 Better split:
 
 ```text
-tutorial-pastebin
-tutorial-pastebin-multiagent
+tutorial-deaddrop
+tutorial-deaddrop-multiagent
 ```
 
 or:
@@ -85,7 +85,7 @@ or:
 examples/templates/multiagent-fallback
 ```
 
-Default pastebin should be boring:
+Default DeadDrop should be boring:
 
 ```text
 planner -> semantic_context -> context -> implement -> validate -> test -> review
@@ -93,9 +93,9 @@ planner -> semantic_context -> context -> implement -> validate -> test -> revie
 
 Use one strong implementer first. Add fallback only in a separate experiment template.
 
-## P1: Add A Qwen3 / 30B Pastebin Variant
+## P1: Add A Qwen3 / 30B DeadDrop Variant
 
-Status: implemented as the default pastebin model path using `qwen3-coder:30b`.
+Status: implemented as the default DeadDrop model path using `qwen3-coder:30b`.
 
 Original idea:
 
@@ -110,7 +110,7 @@ kass reply- No lets make this the default. the qwen3-coder:30b is fast now for m
 Suggested template/config:
 
 ```text
-tutorial-pastebin-qwen3
+tutorial-deaddrop-qwen3
 ```
 
 Possible role split:
@@ -188,7 +188,7 @@ Original idea:
 - Have a test governance layer for when agents write tests.
 - A reviewer validates alignment with acceptance criteria.
 
-Recommendation: yes, but only for generated-test mode. Do not put generated tests back into default pastebin yet.
+Recommendation: yes, but only for generated-test mode. Do not put generated tests back into default DeadDrop yet.
 
 The previous failures proved test-writing agents will:
 
@@ -240,7 +240,7 @@ Do not modify:
 - tests/test_task001.py
 ```
 
-This may help smaller models, but it is another model output that can be wrong. Add it only after the fixed-test pipeline works through all pastebin tasks.
+This may help smaller models, but it is another model output that can be wrong. Add it only after the fixed-test pipeline works through all DeadDrop tasks.
 
 ## P2/P3: Add A Test Planner
 
@@ -267,7 +267,7 @@ test_planner -> write_tests -> test_governance -> implement
 
 For now, fold this idea into the future test governance/analyzer work.
 
-## P1: Add Fixed Tests For All Pastebin Tasks
+## P1: Add Fixed Tests For All DeadDrop Tasks
 
 Status: mostly implemented in the template.
 

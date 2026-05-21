@@ -30,14 +30,14 @@ class ReliabilityFeatureTests(unittest.TestCase):
             "\n".join(
                 [
                     "ImportError while importing test module 'tests/test_app.py'.",
-                    "ModuleNotFoundError: No module named 'pastebin_app'",
+                    "ModuleNotFoundError: No module named 'deaddrop_app'",
                 ]
             ),
             exit_code=2,
         )
 
         self.assertEqual(result.category, "missing dependency")
-        self.assertIn("pastebin_app", result.probable_root_cause)
+        self.assertIn("deaddrop_app", result.probable_root_cause)
 
     def test_failure_classifier_detects_local_import_mismatch(self) -> None:
         result = classify_failure(
@@ -75,7 +75,7 @@ class ReliabilityFeatureTests(unittest.TestCase):
         result = classify_failure(
             "\n".join(
                 [
-                    '  File "C:\\repo\\project\\src\\pastebin_app\\app.py", line 31, in get_db',
+                    '  File "C:\\repo\\project\\src\\deaddrop_app\\app.py", line 31, in get_db',
                     "    if 'db' not in g:",
                     "NameError: name 'g' is not defined",
                 ]
@@ -84,7 +84,7 @@ class ReliabilityFeatureTests(unittest.TestCase):
         )
 
         self.assertEqual(result.category, "logic bug")
-        self.assertIn("src\\pastebin_app\\app.py", result.probable_root_cause)
+        self.assertIn("src\\deaddrop_app\\app.py", result.probable_root_cause)
 
     def test_retry_churn_stops_on_repeated_failure_signature(self) -> None:
         entries = (
@@ -94,7 +94,7 @@ class ReliabilityFeatureTests(unittest.TestCase):
                 status="fail",
                 cause="Command exited with code 1: python -m pytest -q",
                 next_stage="implement",
-                failure_signature="NameError | src/pastebin_app/app.py | 31 | python -m pytest -q",
+                failure_signature="NameError | src/deaddrop_app/app.py | 31 | python -m pytest -q",
             ),
             RetryMemoryEntry(
                 attempt=2,
@@ -102,7 +102,7 @@ class ReliabilityFeatureTests(unittest.TestCase):
                 status="fail",
                 cause="Command exited with code 1: python -m pytest -q",
                 next_stage="implement",
-                failure_signature="NameError | src/pastebin_app/app.py | 31 | python -m pytest -q",
+                failure_signature="NameError | src/deaddrop_app/app.py | 31 | python -m pytest -q",
             ),
         )
 
@@ -119,7 +119,7 @@ class ReliabilityFeatureTests(unittest.TestCase):
                 status="fail",
                 cause="Command exited with code 1: python -m pytest -q",
                 next_stage="implement",
-                failure_signature="NameError | src/pastebin_app/app.py | 31 | python -m pytest -q",
+                failure_signature="NameError | src/deaddrop_app/app.py | 31 | python -m pytest -q",
             )
             for attempt in range(1, 4)
         )
@@ -132,7 +132,7 @@ class ReliabilityFeatureTests(unittest.TestCase):
         signature = build_failure_signature(
             "\n".join(
                 [
-                    '  File "C:\\repo\\project\\src\\pastebin_app\\app.py", line 31, in get_db',
+                    '  File "C:\\repo\\project\\src\\deaddrop_app\\app.py", line 31, in get_db',
                     "NameError: name 'g' is not defined",
                     '  File "C:\\Users\\metis\\...\\site-packages\\_pytest\\cacheprovider.py", line 429, in set',
                 ]
@@ -140,7 +140,7 @@ class ReliabilityFeatureTests(unittest.TestCase):
             reason="Command exited with code 1: python -m pytest -q",
         )
 
-        self.assertIn("src\\pastebin_app\\app.py", signature)
+        self.assertIn("src\\deaddrop_app\\app.py", signature)
         self.assertNotIn("_pytest\\cacheprovider.py", signature)
 
     def test_command_failure_writes_diagnostics_and_retry_memory(self) -> None:

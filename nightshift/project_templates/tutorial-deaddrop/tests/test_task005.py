@@ -1,4 +1,4 @@
-from pastebin_app.app import create_app
+from deaddrop_app.app import create_app
 
 
 def test_root_shows_snippet_list_html(tmp_path):

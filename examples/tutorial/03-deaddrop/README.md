@@ -1,6 +1,6 @@
-# Tutorial 03: Pastebin With Fixed Tests And Telemetry
+# Tutorial 03: DeadDrop With Fixed Tests And Telemetry
 
-This tutorial uses the `tutorial-pastebin` template: a small Flask snippet-hosting service designed for deterministic NightShift orchestration tests.
+This tutorial uses the `tutorial-deaddrop` template: a small Flask snippet sharing utility designed for deterministic NightShift orchestration tests.
 
 It is intentionally simpler than the imageboard tutorial. There are no uploads, thumbnails, sessions, or moderation queues. The work is ordinary web-app behavior: snippet creation, viewing, listing, filtering, expiration handling, and simple HTML forms.
 
@@ -9,26 +9,26 @@ It is intentionally simpler than the imageboard tutorial. There are no uploads, 
 Run this from a disposable parent directory:
 
 ```bash
-nightshift init --template tutorial-pastebin --root nightshift-pastebin
-cd nightshift-pastebin
+nightshift init --template tutorial-deaddrop --root nightshift-deaddrop
+cd nightshift-deaddrop
 ```
 
 For an isolated local integration run, use the integration sandbox command from the NightShift repository root:
 
 ```bash
-python -m nightshift.cli integ-run --template tutorial-pastebin
+python -m nightshift.cli integ-run --template tutorial-deaddrop
 ```
 
 To create, set up, validate, and run one task in a single command:
 
 ```bash
-python -m nightshift.cli integ-test --template tutorial-pastebin --task TASK-001
+python -m nightshift.cli integ-test --template tutorial-deaddrop --task TASK-001
 ```
 
 To create the sandbox and set up the Python project immediately:
 
 ```bash
-python -m nightshift.cli integ-run --template tutorial-pastebin --setup
+python -m nightshift.cli integ-run --template tutorial-deaddrop --setup
 ```
 
 Then set up the generated Python project:
@@ -56,7 +56,7 @@ nightshift.yaml
     reviewer.md
   tasks.md
 src/
-  pastebin_app/
+  deaddrop_app/
 templates/
 tests/
 pyproject.toml
@@ -79,7 +79,7 @@ Install target dependencies:
 python -m pip install -e . pytest flask
 ```
 
-Install and start Ollama, then pull the default pastebin model:
+Install and start Ollama, then pull the default DeadDrop model:
 
 ```bash
 ollama pull qwen3-coder:30b
@@ -90,11 +90,11 @@ NightShift uses Ollama's local HTTP API, normally at `http://localhost:11434`.
 
 ## Model
 
-The default pastebin pipeline uses one strong local coder model:
+The default DeadDrop pipeline uses one strong local coder model:
 
 - `qwen3-coder:30b`
 
-NightShift records which agent/model handled each stage in `telemetry-summary.md`. Multi-candidate fallback belongs in a separate experiment template, not the default pastebin reliability harness.
+NightShift records which agent/model handled each stage in `telemetry-summary.md`. Multi-candidate fallback belongs in a separate experiment template, not the default DeadDrop reliability harness.
 
 ## TDD Pipeline
 
@@ -137,4 +137,4 @@ Then inspect:
 
 ## Pipeline Reference
 
-A copy of the template pipeline is included here as [nightshift.yaml](nightshift.yaml). The canonical runnable template lives under `nightshift/project_templates/tutorial-pastebin/`.
+A copy of the template pipeline is included here as [nightshift.yaml](nightshift.yaml). The canonical runnable template lives under `nightshift/project_templates/tutorial-deaddrop/`.

@@ -59,22 +59,22 @@ class InitProjectTests(unittest.TestCase):
         self.assertIn("real-long-running", available_templates())
         self.assertIn("real-simple", available_templates())
         self.assertIn("tutorial-imageboard", available_templates())
-        self.assertIn("tutorial-pastebin", available_templates())
+        self.assertIn("tutorial-deaddrop", available_templates())
 
-    def test_init_pastebin_template_creates_skeleton_and_qwen3_config(self) -> None:
+    def test_init_DeadDrop_template_creates_skeleton_and_qwen3_config(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
 
-            init_project(root, template="tutorial-pastebin")
+            init_project(root, template="tutorial-deaddrop")
 
             config = (root / "nightshift.yaml").read_text(encoding="utf-8")
             self.assertTrue((root / ".nightshift" / "tasks.md").exists())
             self.assertTrue((root / ".nightshift" / "agents" / "test-writer.md").exists())
-            self.assertTrue((root / "src" / "pastebin_app" / "app.py").exists())
+            self.assertTrue((root / "src" / "deaddrop_app" / "app.py").exists())
             self.assertTrue((root / "tests" / "test_task001.py").exists())
             self.assertTrue((root / "tests" / ".gitkeep").exists())
-            self.assertFalse((root / "tests" / "test_pastebin.py").exists())
-            self.assertIn("def create_app(database_path", (root / "src" / "pastebin_app" / "app.py").read_text(encoding="utf-8"))
+            self.assertFalse((root / "tests" / "test_deaddrop.py").exists())
+            self.assertIn("def create_app(database_path", (root / "src" / "deaddrop_app" / "app.py").read_text(encoding="utf-8"))
             self.assertIn("type: semantic_context", config)
             self.assertNotIn("id: write_tests", config)
             self.assertNotIn("id: review_tests", config)
@@ -88,15 +88,15 @@ class InitProjectTests(unittest.TestCase):
             self.assertNotIn("carstenuhlig/omnicoder-9b", config)
             self.assertNotIn("deepseek-coder-v2:16b", config)
 
-    def test_pastebin_example_tutorial_docs_exist(self) -> None:
+    def test_deaddrop_example_tutorial_docs_exist(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        tutorial = root / "examples" / "tutorial" / "03-pastebin"
+        tutorial = root / "examples" / "tutorial" / "03-deaddrop"
 
         self.assertTrue((tutorial / "README.md").exists())
         self.assertTrue((tutorial / "tasks.md").exists())
         self.assertTrue((tutorial / "nightshift.yaml").exists())
         self.assertIn(
-            "nightshift init --template tutorial-pastebin",
+            "nightshift init --template tutorial-deaddrop",
             (tutorial / "README.md").read_text(encoding="utf-8"),
         )
 

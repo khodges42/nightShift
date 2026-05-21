@@ -1,4 +1,4 @@
-from pastebin_app.app import create_app
+from deaddrop_app.app import create_app
 
 
 def test_expired_snippets_are_excluded_from_listing(tmp_path):

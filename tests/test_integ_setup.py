@@ -11,7 +11,7 @@ class IntegrationSetupTests(unittest.TestCase):
     def test_setup_python_project_dry_run_uses_integration_venv(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            run = create_integration_run(root, template="tutorial-pastebin")
+            run = create_integration_run(root, template="tutorial-deaddrop")
 
             result = setup_python_project(
                 run.directory / "project",
@@ -48,7 +48,7 @@ class IntegrationSetupTests(unittest.TestCase):
     def test_format_setup_result_includes_activation_hint(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            run = create_integration_run(root, template="tutorial-pastebin")
+            run = create_integration_run(root, template="tutorial-deaddrop")
 
             result = setup_python_project(
                 run.directory / "project",

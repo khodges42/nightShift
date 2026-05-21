@@ -115,7 +115,7 @@ def build_parser() -> argparse.ArgumentParser:
     integ_test_parser.add_argument("--root", default=".", help="Repository root where integ_runs/ is created.")
     integ_test_parser.add_argument(
         "--template",
-        default="tutorial-pastebin",
+        default="tutorial-deaddrop",
         choices=available_templates(),
         help="Template to initialize inside the sandbox.",
     )

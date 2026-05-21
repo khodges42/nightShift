@@ -344,17 +344,17 @@ because:
 
 ```text
 PLAN
-  ↓
+  â†“
 REVIEW_PLAN
-  ↓
+  â†“
 IMPLEMENT
-  ↓
+  â†“
 TEST
-  ↓
+  â†“
 STATIC_ANALYSIS
-  ↓
+  â†“
 REVIEW
-  ↓
+  â†“
 DECISION
 ```
 
@@ -693,11 +693,11 @@ Validation occurs in multiple stages:
 
 ```text
 Tests
-  ↓
+  â†“
 Static Analysis
-  ↓
+  â†“
 Review Agent
-  ↓
+  â†“
 Decision
 ```
 
@@ -897,7 +897,7 @@ NightShift currently provides:
 * Final task notes, stage summaries, task completion artifacts, and run summaries
 * Documentation for config, artifact review, troubleshooting, quickstart, and patch workflows
 * A complete fake-agent patch-mode quickstart Lisp example under `examples/quickstart-lisp/`
-* A deterministic pastebin tutorial template with model fallback configuration
+* A deterministic DeadDrop tutorial template with fixed-test configuration
 
 The system remains sequential and local-first. It is designed to produce reviewable artifacts and repository state, not to deploy, push, or autonomously ship changes.
 
@@ -1181,19 +1181,19 @@ Acceptance Criteria:
 - Includes tests for retrieval quality
 
 
-- [x] TASK-015: Pastebin tutorial project template
+- [x] TASK-015: DeadDrop tutorial project template
 
 Dependencies:
 - TASK-008
 - TASK-005
 
 Description:
-Add a new tutorial project template for NightShift based on a small Pastebin/snippet-hosting service. This should work like the existing imageboard tutorial, but be simpler, more deterministic, and easier to use for testing agent orchestration. The template should be creatable with `--template`.
+Add a new tutorial project template for NightShift based on a small DeadDrop snippet sharing utility. This should work like the existing imageboard tutorial, but be simpler, more deterministic, and easier to use for testing agent orchestration. The template should be creatable with `--template`.
 
 Acceptance Criteria:
-- Adds a new template named `pastebin`
+- Adds a new template named `deaddrop`
 - Supports creating the tutorial project with a command such as:
-  - `nightshift init --template tutorial-pastebin`
+  - `nightshift init --template tutorial-deaddrop`
 - Template includes a small but realistic app with:
   - snippet creation
   - snippet viewing
@@ -1206,13 +1206,13 @@ Acceptance Criteria:
 - Uses deterministic fixtures and simple dependencies
 - Includes clear task descriptions for the agent to complete
 - Includes README instructions explaining the tutorial goals
-- Supports model fallback ordering for this template:
+- Supports single-model fixed-test flow for this template:
   - `qwen2.5-coder:14b`
   - `carstenuhlig/omnicoder-9b`
   - `deepseek-coder-v2:16b`
 - If the first model fails or exceeds its retry budget, the next fallback model is attempted
 - Records which model handled each attempt
-- Includes tests for template creation and model fallback configuration
+- Includes tests for template creation and fixed-test configuration
 ---
 
 # 17. Current Product Shape

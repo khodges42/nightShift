@@ -23,7 +23,7 @@ class IntegrationTestResult:
 def run_integration_test(
     root: str | Path = ".",
     *,
-    template: str = "tutorial-pastebin",
+    template: str = "tutorial-deaddrop",
     task: str | None = None,
     all_tasks: bool = False,
     keep: int | None = None,

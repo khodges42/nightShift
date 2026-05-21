@@ -1,29 +1,29 @@
-# NightShift Pastebin Tutorial
+# NightShift DeadDrop Tutorial
 
-This template is a small deterministic snippet-hosting service for testing NightShift orchestration.
+This template is a small deterministic snippet sharing utility for testing NightShift orchestration.
 
 Create it with:
 
 ```bash
-nightshift init --template tutorial-pastebin
+nightshift init --template tutorial-deaddrop
 ```
 
 Or create an isolated integration sandbox from the NightShift repository root:
 
 ```bash
-python -m nightshift.cli integ-run --template tutorial-pastebin
+python -m nightshift.cli integ-run --template tutorial-deaddrop
 ```
 
 To create, set up, validate, and run one task in a single command:
 
 ```bash
-python -m nightshift.cli integ-test --template tutorial-pastebin --task TASK-001
+python -m nightshift.cli integ-test --template tutorial-deaddrop --task TASK-001
 ```
 
 To create the sandbox and set it up in one step:
 
 ```bash
-python -m nightshift.cli integ-run --template tutorial-pastebin --setup
+python -m nightshift.cli integ-run --template tutorial-deaddrop --setup
 ```
 
 Then set up the generated Python project:
@@ -54,7 +54,7 @@ nightshift what-happened
 
 When running from an integration sandbox, the same commands are run inside `integ_runs/<timestamp>/project`.
 
-The default pastebin pipeline uses `qwen3-coder:30b` for planning, implementation, debugging, test review, and final review. It intentionally does not use multi-candidate fallback; pastebin is the deterministic reliability harness.
+The default DeadDrop pipeline uses `qwen3-coder:30b` for planning, implementation, debugging, test review, and final review. It intentionally does not use multi-candidate fallback; DeadDrop is the deterministic reliability harness.
 
 Telemetry artifacts record which agent/model handled each stage and estimate token usage.
 

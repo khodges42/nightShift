@@ -1,4 +1,4 @@
-"""Pastebin tutorial application scaffold."""
+"""DeadDrop tutorial application scaffold."""
 
 from __future__ import annotations
 

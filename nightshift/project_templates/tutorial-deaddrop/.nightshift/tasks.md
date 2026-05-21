@@ -1,9 +1,9 @@
-# Pastebin Tutorial Tasks
+# DeadDrop Tutorial Tasks
 
 - [ ] TASK-001: Snippet creation and viewing
 
 Description:
-Complete the pastebin service foundation. Support creating snippets with title and body. Support viewing a single snippet by id.
+Complete the snippet sharing utility foundation. Support creating snippets with title and body. Support viewing a single snippet by id.
 
 Acceptance Criteria:
 - POST `/snippets` creates a snippet with title and body

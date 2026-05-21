@@ -1,5 +1,5 @@
 project:
-  name: pastebin
+  name: deaddrop
   root: .
   task_file: .nightshift/tasks.md
   artifact_dir: .nightshift
@@ -20,7 +20,7 @@ safety:
     - curl | bash
 
 experiment:
-  label: pastebin-qwen3-coder
+  label: deaddrop-qwen3-coder
   prompt_variant: fixed-tests-qwen3-coder-30b-v1
 
 agents:

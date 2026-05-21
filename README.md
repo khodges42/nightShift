@@ -124,19 +124,19 @@ Other built-in real-model templates:
 ```bash
 nightshift init --template real-simple --root bookmarks-demo
 nightshift init --template real-long-running --root incident-service
-nightshift init --template tutorial-pastebin --root nightshift-pastebin
+nightshift init --template tutorial-deaddrop --root nightshift-deaddrop
 ```
 
 Create an isolated integration sandbox for a template:
 
 ```bash
-python -m nightshift.cli integ-run --template tutorial-pastebin
+python -m nightshift.cli integ-run --template tutorial-deaddrop
 ```
 
 To create the sandbox and run the Python setup immediately:
 
 ```bash
-python -m nightshift.cli integ-run --template tutorial-pastebin --setup
+python -m nightshift.cli integ-run --template tutorial-deaddrop --setup
 ```
 
 Then run the Python project setup helper. It finds the generated venv, installs this NightShift checkout into it, installs the target project, installs pytest by default, and runs `nightshift validate`:
@@ -387,7 +387,7 @@ Additional docs:
 - [Quickstart](QUICKSTART.md)
 - [Tutorial 01: imageboard with real local models](examples/tutorial/01-imageboard/README.md)
 - [Tutorial 02: Lisp with real local models](examples/tutorial/02-lisp/README.md)
-- [Tutorial 03: Pastebin with model fallback and telemetry](examples/tutorial/03-pastebin/README.md)
+- [Tutorial 03: DeadDrop with fixed tests and telemetry](examples/tutorial/03-deaddrop/README.md)
 - [Config reference](docs/config-reference.md)
 - [Artifact review workflow](docs/artifact-review.md)
 - [Troubleshooting](docs/troubleshooting.md)

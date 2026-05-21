@@ -32,7 +32,7 @@ class WhatHappenedTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (task_dir / "test-output-1.txt").write_text(
-                "Command: `python -m pytest -q`\nExit code: 2\nModuleNotFoundError: No module named 'pastebin_app'\n",
+                "Command: `python -m pytest -q`\nExit code: 2\nModuleNotFoundError: No module named 'deaddrop_app'\n",
                 encoding="utf-8",
             )
             (diagnostics / "test-failure-retry-1.md").write_text(

@@ -12,6 +12,6 @@ Not to implement until we get successful long running runs.
 * maybe this is later
 
 ## A way to easily make A/B tests to benchmark models?
-* Right now I can do this manually, for example I want to run the tutorial-pastebin with qwen3.6:27b as the planner and qwen2.5-coder:14b as the coder, and another with qwen3.6:27b as both, etc.
+* Right now I can do this manually, for example I want to run the tutorial-deaddrop with qwen3.6:27b as the planner and qwen2.5-coder:14b as the coder, and another with qwen3.6:27b as both, etc.
 * Maybe there is a way to make it easier to do that, possibly by creating a template that can be controlled by a larger multi-run file?
 * This is probably for way later.

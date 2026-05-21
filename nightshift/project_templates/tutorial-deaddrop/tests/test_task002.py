@@ -1,4 +1,4 @@
-from pastebin_app.app import create_app
+from deaddrop_app.app import create_app
 
 
 def test_create_snippet_accepts_optional_metadata(tmp_path):

@@ -1,4 +1,4 @@
-from pastebin_app.app import create_app
+from deaddrop_app.app import create_app
 
 
 def _create(client, title, body, **metadata):
