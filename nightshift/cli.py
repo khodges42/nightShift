@@ -176,13 +176,12 @@ def main(argv: list[str] | None = None) -> int:
                 parser.error("run accepts either --all or --task, not both.")
             runner = PipelineRunner(config, logger=RunLogger(console=print))
             if args.all:
-                selected = [task for task in tasks if not task.completed]
                 with TerminalAnimation(
                     args.animation,
                     message="NightShift running all tasks",
                     enabled=not args.no_animation,
                 ):
-                    result = runner.run_tasks(selected)
+                    result = runner.run_tasks(tasks)
                 print(f"Status: {result.status}")
                 print(f"Tasks run: {len(result.task_results)}")
                 print(f"Completed: {result.completed_count}")

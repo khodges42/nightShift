@@ -511,9 +511,18 @@ def parse_review_output(output: str) -> tuple[StageStatus, str, str | None, str 
         return "fail", "Review output did not include a valid status.", None, None
 
     reason = values.get("reason") or "Review returned no reason."
-    next_stage = values.get("next_stage") or None
-    context_update = values.get("context_update") or None
+    next_stage = _optional_review_value(values.get("next_stage"))
+    context_update = _optional_review_value(values.get("context_update"))
     return raw_status, reason, next_stage, context_update  # type: ignore[return-value]
+
+
+def _optional_review_value(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized or normalized.lower() in {"none", "null", "n/a"}:
+        return None
+    return normalized
 
 
 def format_agent_invocation(stage_id: str, invocation: AgentInvocation) -> str:

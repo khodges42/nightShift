@@ -52,6 +52,29 @@ def is_git_repository(project_root: Path) -> bool:
     return state.available and state.stdout.strip() == "true"
 
 
+def git_failure_reason(result: GitCommandResult, project_root: Path) -> str:
+    details = (result.stderr or result.stdout or "unknown git error").strip()
+    lowered = details.lower()
+    if "dubious ownership" in lowered or "safe.directory" in lowered:
+        return "\n".join(
+            [
+                "Git repository ownership is not trusted by Git.",
+                "",
+                "Git refused to read this repository because it appears to be owned by a different user identity.",
+                "NightShift will not change global Git configuration automatically.",
+                "",
+                "To trust this repository, run:",
+                "",
+                "```powershell",
+                f"git config --global --add safe.directory {project_root.as_posix()}",
+                "```",
+            ]
+        )
+    if "not a git repository" in lowered or "not a git work tree" in lowered:
+        return "Project root is not a git repository."
+    return details or "unknown git error"
+
+
 def ensure_clean_worktree(project_root: Path, require_clean: bool) -> None:
     if not require_clean:
         return
@@ -59,27 +82,31 @@ def ensure_clean_worktree(project_root: Path, require_clean: bool) -> None:
     if not status.available:
         raise SafetyError(
             "Safety error: clean worktree is required, but git status could not be read: "
-            f"{status.stderr.strip() or 'unknown git error'}"
+            f"{git_failure_reason(status, project_root)}"
         )
     if status.stdout.strip():
         raise SafetyError("Safety error: clean worktree is required, but repository is dirty.")
 
 
 def write_git_artifacts(artifacts: ArtifactStore, task_id: str, when: str) -> Path:
+    state = get_git_repository_state(artifacts.project_root)
+    if not state.available:
+        content = format_git_unavailable_status(state, when, artifacts.project_root)
+        return artifacts.write_stage_output(task_id, f"git-status-{when}.txt", content)
     status = get_git_status(artifacts.project_root)
     content = format_git_status(status, when)
     return artifacts.write_stage_output(task_id, f"git-status-{when}.txt", content)
 
 
 def write_diff_artifact(artifacts: ArtifactStore, task_id: str) -> Path:
-    if not is_git_repository(artifacts.project_root):
-        content = "Git diff unavailable.\n\nReason: project root is not a git work tree.\n"
+    state = get_git_repository_state(artifacts.project_root)
+    if not state.available or state.stdout.strip() != "true":
+        content = f"Git diff unavailable.\n\nReason: {git_failure_reason(state, artifacts.project_root)}\n"
         return artifacts.write_stage_output(task_id, "diff.patch", content)
 
     diff = run_git(artifacts.project_root, ["diff", "--binary"], timeout_seconds=30)
     if not diff.available:
-        details = (diff.stderr or "unknown git error").strip()
-        content = f"Git diff unavailable.\n\nReason: {details}\n"
+        content = f"Git diff unavailable.\n\nReason: {git_failure_reason(diff, artifacts.project_root)}\n"
     elif diff.stdout:
         content = diff.stdout
     else:
@@ -108,3 +135,22 @@ def format_git_status(status: GitCommandResult, when: str) -> str:
         "",
     ]
     return "\n".join(lines)
+
+
+def format_git_unavailable_status(status: GitCommandResult, when: str, project_root: Path) -> str:
+    return "\n".join(
+        [
+            f"# Git Status {when}",
+            "",
+            "Git repository: false",
+            f"Available: {str(status.available).lower()}",
+            f"Exit code: {status.exit_code}",
+            "",
+            "## Explanation",
+            "",
+            git_failure_reason(status, project_root),
+            "",
+            "Git metadata and diff artifacts are unavailable for this run.",
+            "",
+        ]
+    )

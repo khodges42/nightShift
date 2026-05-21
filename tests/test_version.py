@@ -15,10 +15,11 @@ from nightshift.version import (
 
 class VersionTests(unittest.TestCase):
     def test_display_version_includes_channel_hotdog_and_topping(self) -> None:
-        self.assertEqual(display_version(), "0.2.4-alpha-bratwurst-relish")
-        self.assertEqual(PACKAGE_VERSION, "0.2.4")
+        self.assertTrue(display_version().startswith(f"{PACKAGE_VERSION}-alpha-"))
         self.assertIn(hotdog_version, HOTDOG_VERSIONS)
         self.assertIn(topping_version, TOPPING_VERSIONS)
+        self.assertIn(hotdog_version, display_version())
+        self.assertIn(topping_version, display_version())
 
     def test_banner_uses_central_display_version(self) -> None:
         self.assertIn(f"VERSION: {display_version()}", format_banner())

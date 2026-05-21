@@ -110,6 +110,18 @@ class AgentExecutorTests(unittest.TestCase):
         self.assertEqual(next_stage, "implement")
         self.assertEqual(context_update, "Fix tests")
 
+    def test_review_output_parser_treats_empty_sentinel_next_stage_as_missing(self) -> None:
+        for next_stage_value in ("", "None", "null", "N/A"):
+            with self.subTest(next_stage=next_stage_value):
+                status, reason, next_stage, context_update = parse_review_output(
+                    f"status: pass\nreason: ok\nnext_stage: {next_stage_value}\ncontext_update: None\n"
+                )
+
+                self.assertEqual(status, "pass")
+                self.assertEqual(reason, "ok")
+                self.assertIsNone(next_stage)
+                self.assertIsNone(context_update)
+
     def test_ollama_agent_invocation_uses_model_without_real_ollama(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
