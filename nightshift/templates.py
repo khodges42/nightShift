@@ -40,7 +40,7 @@ agents:
     system_prompt: agents/debugger.md
 
 pipeline:
-  max_task_retries: 3
+  max_task_retries: 6
   stages:
     - id: plan
       type: agent
@@ -195,7 +195,7 @@ agents:
     system_prompt: .nightshift/agents/debugger.md
 
 pipeline:
-  max_task_retries: 3
+  max_task_retries: 6
   continue_on_task_failure: false
   stages:
     - id: plan

@@ -17,7 +17,7 @@ class ConfigTests(unittest.TestCase):
 
             self.assertEqual(config.project.name, "example-project")
             self.assertIn("planner", config.agents)
-            self.assertEqual(config.pipeline.max_task_retries, 3)
+            self.assertEqual(config.pipeline.max_task_retries, 6)
             self.assertEqual(config.pipeline.stages[0].id, "plan")
 
     def test_missing_required_section_fails_clearly(self) -> None:
@@ -86,7 +86,7 @@ class ConfigTests(unittest.TestCase):
             config_path = root / "nightshift.yaml"
             config_path.write_text(
                 config_path.read_text(encoding="utf-8").replace(
-                    "max_task_retries: 3",
+                    "max_task_retries: 6",
                     "max_task_retries: three",
                 ),
                 encoding="utf-8",

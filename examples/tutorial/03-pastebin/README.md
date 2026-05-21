@@ -44,6 +44,7 @@ nightshift.yaml
 .nightshift/
   agents/
     planner.md
+    test-writer.md
     implementer.md
     debugger.md
     reviewer.md
@@ -56,7 +57,7 @@ pyproject.toml
 README.md
 ```
 
-The template includes a working baseline Flask app and deterministic pytest suite. NightShift tasks then extend or verify app behavior in small increments.
+The template intentionally does not include a working Flask app or pre-generated task tests. For each task, NightShift first generates acceptance tests from the current task's acceptance criteria, reviews those tests for scope, and then asks the implementation agent to make them pass.
 
 ## Prerequisites
 
@@ -85,13 +86,23 @@ NightShift uses Ollama's local HTTP API, normally at `http://localhost:11434`.
 
 ## Model Fallback
 
-The template's implementation stage uses this fallback order:
+The template writes tests with `qwen2.5-coder:14b`. The implementation stage uses this fallback order:
 
 1. `qwen2.5-coder:14b`
 2. `carstenuhlig/omnicoder-9b`
 3. `deepseek-coder-v2:16b`
 
 NightShift records which agent/model handled each stage in `telemetry-summary.md`.
+
+## TDD Pipeline
+
+The task pipeline runs in this shape:
+
+```text
+plan -> semantic_context -> context -> write_tests -> review_tests -> implement -> pytest -> review
+```
+
+Generated tests should cover only the current task. They are expected to fail before implementation, so the pipeline reviews the test patch but does not run pytest until after the implementation patch is applied.
 
 ## Task Plan
 

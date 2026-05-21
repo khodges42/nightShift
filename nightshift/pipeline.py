@@ -251,8 +251,7 @@ class PipelineRunner:
                 decision = evaluate_retry_churn(
                     tuple(retry_memory),
                     retry_budget=self.config.pipeline.max_task_retries + 1,
-                    repeated_signature_after=self.config.pipeline.stop_on_repeated_failure_signature_after
-                    or self.config.pipeline.max_task_retries,
+                    repeated_signature_after=self.config.pipeline.stop_on_repeated_failure_signature_after,
                 )
                 self.artifacts.write_stage_output(
                     task.id,
@@ -592,8 +591,8 @@ class PipelineRunner:
                 f"# Implementation Summary\n\nStatus: fail\nReason: {exc}\n",
             )
             return StageResult(stage.id, "fail", str(exc), output_path=result.output_path)
-        patch_filename = "repair-{0}.patch".format(retry_count) if retry_count else (stage.output or "proposed.patch")
-        summary_filename = "implementation-summary.md" if retry_count == 0 else f"repair-summary-{retry_count}.md"
+        patch_filename = _writer_patch_filename(stage, retry_count)
+        summary_filename = _writer_summary_filename(stage, retry_count)
         proposed_path = self.artifacts.write_stage_output(task.id, patch_filename, patch)
         summary_path = self.artifacts.write_stage_output(
             task.id,
@@ -728,7 +727,7 @@ class PipelineRunner:
                 try:
                     patch = normalize_patch_text(stdout)
                 except PipelineError:
-                    summary_filename = "implementation-summary.md" if retry_count == 0 else f"repair-summary-{retry_count}.md"
+                    summary_filename = _writer_summary_filename(stage, retry_count)
                     reason = str(exc)
                     if "generated patch has no changes" in reason:
                         next_stage = self._stage_after_patch_flow(stage.id)
@@ -758,8 +757,8 @@ class PipelineRunner:
                 patch_reason = "Fallback patch written from unified diff output."
                 log_message = "Wrote fallback patch from unified diff output"
                 break
-        patch_filename = "repair-{0}.patch".format(retry_count) if retry_count else (stage.output or "proposed.patch")
-        summary_filename = "implementation-summary.md" if retry_count == 0 else f"repair-summary-{retry_count}.md"
+        patch_filename = _writer_patch_filename(stage, retry_count)
+        summary_filename = _writer_summary_filename(stage, retry_count)
         proposed_path = self.artifacts.write_stage_output(task.id, patch_filename, patch)
         summary_path = self.artifacts.write_stage_output(
             task.id,
@@ -1379,6 +1378,21 @@ def _latest_patch_like_output(previous_outputs: dict[str, str]) -> str:
         if stage_id.endswith(".patch") or "diff --git " in content or "\n--- " in content:
             return content
     raise PipelineError("Patch error: no previous patch output found.")
+
+
+def _writer_patch_filename(stage: StageConfig, retry_count: int) -> str:
+    if retry_count <= 0:
+        return stage.output or "proposed.patch"
+    if stage.type == "code_writer" or stage.id == "implement":
+        return f"repair-{retry_count}.patch"
+    return _attempt_filename(stage.output or f"{stage.id}.patch", retry_count)
+
+
+def _writer_summary_filename(stage: StageConfig, retry_count: int) -> str:
+    if stage.type == "code_writer" or stage.id == "implement":
+        return "implementation-summary.md" if retry_count <= 0 else f"repair-summary-{retry_count}.md"
+    base = f"{stage.id}-summary.md"
+    return base if retry_count <= 0 else _attempt_filename(base, retry_count)
 
 
 def _attempt_filename(filename: str, retry_count: int) -> str:

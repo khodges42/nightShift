@@ -21,7 +21,7 @@ safety:
 
 experiment:
   label: pastebin-model-fallback
-  prompt_variant: qwen-omnicoder-deepseek-v1
+  prompt_variant: tdd-qwen-omnicoder-deepseek-v2
 
 agents:
   planner:
@@ -35,6 +35,12 @@ agents:
     model: qwen2.5-coder:14b
     temperature: 0.1
     system_prompt: .nightshift/agents/implementer.md
+
+  test_writer:
+    backend: ollama
+    model: qwen2.5-coder:14b
+    temperature: 0.1
+    system_prompt: .nightshift/agents/test-writer.md
 
   implementer_omnicoder:
     backend: ollama
@@ -62,7 +68,8 @@ agents:
     system_prompt: .nightshift/agents/reviewer.md
 
 pipeline:
-  max_task_retries: 3
+  max_task_retries: 6
+  stop_on_repeated_failure_signature_after: 6
   continue_on_task_failure: false
   stages:
     - id: plan
@@ -77,6 +84,35 @@ pipeline:
     - id: context
       type: repo_context
       output: context-pack.md
+
+    - id: write_tests
+      type: file_writer
+      agent: test_writer
+      output: proposed-tests.patch
+
+    - id: normalize_tests
+      type: patch_normalizer
+      output: normalized-tests.patch
+
+    - id: validate_tests_patch
+      type: patch_validator
+      output: test-patch-validation.md
+      max_files: 6
+      max_lines: 500
+      max_delete_ratio: 0.70
+      on_fail: write_tests
+
+    - id: apply_tests_patch
+      type: patch_apply
+      mode: apply
+      output: test-patch-apply-output.txt
+      on_fail: write_tests
+
+    - id: review_tests
+      type: agent_review
+      agent: reviewer
+      output: test-review.md
+      on_fail: write_tests
 
     - id: implement
       type: file_writer

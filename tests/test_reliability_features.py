@@ -78,6 +78,23 @@ class ReliabilityFeatureTests(unittest.TestCase):
         self.assertTrue(decision.should_stop)
         self.assertIn("same failure signature", decision.reason)
 
+    def test_retry_churn_honors_configured_repeated_failure_threshold(self) -> None:
+        entries = tuple(
+            RetryMemoryEntry(
+                attempt=attempt,
+                stage_id="test",
+                status="fail",
+                cause="Command exited with code 1: python -m pytest -q",
+                next_stage="implement",
+                failure_signature="NameError | src/pastebin_app/app.py | 31 | python -m pytest -q",
+            )
+            for attempt in range(1, 4)
+        )
+
+        decision = evaluate_retry_churn(entries, retry_budget=7, repeated_signature_after=6)
+
+        self.assertFalse(decision.should_stop)
+
     def test_build_failure_signature_prefers_project_traceback_over_pytest_cache(self) -> None:
         signature = build_failure_signature(
             "\n".join(

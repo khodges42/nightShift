@@ -55,3 +55,5 @@ The pipeline uses model fallback ordering for implementation attempts:
 3. `deepseek-coder-v2:16b`
 
 Telemetry artifacts record which agent/model handled each stage and estimate token usage.
+
+This template uses a TDD-oriented pipeline. It starts with a skeletal package, generates task-specific pytest tests from the current task acceptance criteria, reviews those tests for scope, and then implements only enough application code to pass them.
