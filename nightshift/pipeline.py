@@ -9,7 +9,7 @@ import subprocess
 
 from .agents import AgentExecutor
 from .artifacts import ArtifactStore
-from .commands import CommandExecutor
+from .commands import CommandExecutor, extract_test_file_paths, render_command_template
 from .config import COMMAND_STAGE_TYPES, NightShiftConfig, StageConfig
 from .context import ContextManager
 from .dependencies import diagnose_python_dependencies, format_dependency_diagnostic
@@ -145,6 +145,12 @@ class PipelineRunner:
         index = 0
         final_status = "complete"
         final_reason = "Pipeline completed."
+        preflight_result = self._preflight_task(task, stages)
+        if preflight_result:
+            stage_results.append(preflight_result)
+            final_status = "failed"
+            final_reason = preflight_result.reason
+            index = len(stages)
 
         while index < len(stages):
             stage = stages[index]
@@ -248,6 +254,13 @@ class PipelineRunner:
                     "retry-memory.md",
                     summarize_retry_memory(tuple(retry_memory)),
                 )
+                if _repeated_protected_path_violation(tuple(retry_memory)):
+                    final_status = "failed"
+                    final_reason = (
+                        "Escalation policy stopped retries: implementation repeatedly "
+                        "attempted to modify paths outside the stage allowlist."
+                    )
+                    break
                 decision = evaluate_retry_churn(
                     tuple(retry_memory),
                     retry_budget=self.config.pipeline.max_task_retries + 1,
@@ -332,6 +345,45 @@ class PipelineRunner:
             stage_results=tuple(stage_results),
             artifact_dir=str(self.artifacts.create_task_dir(task.id).directory.relative_to(self.config.project.root)),
             reason=final_reason,
+        )
+
+    def _preflight_task(self, task: Task, stages: list[StageConfig]) -> StageResult | None:
+        missing_paths: list[str] = []
+        for stage in stages:
+            if stage.type not in COMMAND_STAGE_TYPES:
+                continue
+            for command in stage.commands:
+                rendered = render_command_template(command, task.id)
+                for path_text in extract_test_file_paths(rendered):
+                    if not (self.config.project.root / path_text).exists():
+                        missing_paths.append(path_text)
+        if not missing_paths:
+            return None
+        unique_paths = tuple(dict.fromkeys(missing_paths))
+        details = "\n".join(f"- `{path}`" for path in unique_paths)
+        output_path = self.artifacts.write_stage_output(
+            task.id,
+            "preflight.md",
+            "\n".join(
+                [
+                    "# Task Preflight",
+                    "",
+                    "Status: fail",
+                    "Reason: configured task test file is missing.",
+                    "",
+                    "## Missing Files",
+                    "",
+                    details,
+                    "",
+                ]
+            ),
+        )
+        return StageResult(
+            "preflight",
+            "fail",
+            "Task preflight failed: configured task test file is missing: "
+            + ", ".join(unique_paths),
+            output_path=str(output_path.relative_to(self.config.project.root)),
         )
 
     def run_tasks(self, tasks: list[Task] | tuple[Task, ...]) -> MultiTaskResult:
@@ -1426,6 +1478,18 @@ def _extract_exit_code(text: str) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _repeated_protected_path_violation(entries: tuple[RetryMemoryEntry, ...]) -> bool:
+    recent = entries[-2:]
+    if len(recent) < 2:
+        return False
+    return all(_is_protected_path_violation(entry.cause) for entry in recent)
+
+
+def _is_protected_path_violation(text: str) -> bool:
+    lowered = text.lower()
+    return "not allowed for this stage" in lowered and "tests/" in lowered.replace("\\", "/")
 
 
 def format_aggregate_run_summary(results: list[PipelineResult], status: str, reason: str) -> str:

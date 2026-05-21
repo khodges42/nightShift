@@ -61,7 +61,7 @@ class InitProjectTests(unittest.TestCase):
         self.assertIn("tutorial-imageboard", available_templates())
         self.assertIn("tutorial-pastebin", available_templates())
 
-    def test_init_pastebin_template_creates_skeleton_and_model_fallback_config(self) -> None:
+    def test_init_pastebin_template_creates_skeleton_and_qwen3_config(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
 
@@ -78,11 +78,15 @@ class InitProjectTests(unittest.TestCase):
             self.assertIn("type: semantic_context", config)
             self.assertNotIn("id: write_tests", config)
             self.assertNotIn("id: review_tests", config)
-            self.assertIn("python -m pytest -q tests", config)
+            self.assertIn("python -m pytest -q tests/test_{task_id_compact}.py", config)
             self.assertIn("max_task_retries: 6", config)
-            self.assertIn("implementer_qwen", config)
-            self.assertIn("carstenuhlig/omnicoder-9b", config)
-            self.assertIn("deepseek-coder-v2:16b", config)
+            self.assertIn("implementer:", config)
+            self.assertIn("qwen3-coder:30b", config)
+            self.assertIn("num_ctx: 8192", config)
+            self.assertIn("num_predict: 4096", config)
+            self.assertNotIn("agent_pool:", config)
+            self.assertNotIn("carstenuhlig/omnicoder-9b", config)
+            self.assertNotIn("deepseek-coder-v2:16b", config)
 
     def test_pastebin_example_tutorial_docs_exist(self) -> None:
         root = Path(__file__).resolve().parents[1]

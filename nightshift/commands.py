@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import re
 import shlex
 import subprocess
 import sys
@@ -68,11 +69,16 @@ class CommandExecutor:
                 command_index=index,
                 command=command,
             )
+            rendered_command = render_command_template(command, task_id)
+            rendered_allowed_commands = tuple(
+                render_command_template(allowed, task_id) for allowed in self.safety.allowed_commands
+            )
             run = self.run_command(
-                command,
+                rendered_command,
                 shell=stage.shell,
                 timeout_seconds=stage.timeout_seconds,
                 working_dir=stage.working_dir,
+                allowed_commands=rendered_allowed_commands,
             )
             runs.append(run)
             self.logger.event(
@@ -120,11 +126,12 @@ class CommandExecutor:
         shell: bool = True,
         timeout_seconds: int | None = None,
         working_dir: Path | None = None,
+        allowed_commands: tuple[str, ...] | None = None,
     ) -> CommandRun:
         try:
             normalized = ensure_command_allowed(
                 command,
-                self.safety.allowed_commands,
+                allowed_commands if allowed_commands is not None else self.safety.allowed_commands,
                 self.safety.forbidden_commands,
             )
         except SafetyError as exc:
@@ -208,6 +215,27 @@ def format_command_runs(stage_id: str, runs: list[CommandRun]) -> str:
             ]
         )
     return "\n".join(lines)
+
+
+def render_command_template(command: str, task_id: str) -> str:
+    task_id_lower = task_id.lower()
+    task_id_slug = task_id_lower.replace("-", "_")
+    task_id_compact = task_id_lower.replace("-", "")
+    return command.format(
+        task_id=task_id,
+        task_id_lower=task_id_lower,
+        task_id_slug=task_id_slug,
+        task_id_compact=task_id_compact,
+    )
+
+
+def extract_test_file_paths(command: str) -> tuple[str, ...]:
+    paths: list[str] = []
+    for match in re.finditer(r"(?<![\w./\\-])(tests[\\/][^\s`'\"<>|&;]+\.py)", command):
+        path = match.group(1).replace("\\", "/")
+        if path not in paths:
+            paths.append(path)
+    return tuple(paths)
 
 
 def _coerce_output(value: str | bytes | None) -> str:

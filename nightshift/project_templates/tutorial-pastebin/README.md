@@ -14,6 +14,12 @@ Or create an isolated integration sandbox from the NightShift repository root:
 python -m nightshift.cli integ-run --template tutorial-pastebin
 ```
 
+To create, set up, validate, and run one task in a single command:
+
+```bash
+python -m nightshift.cli integ-test --template tutorial-pastebin --task TASK-001
+```
+
 To create the sandbox and set it up in one step:
 
 ```bash
@@ -48,12 +54,8 @@ nightshift what-happened
 
 When running from an integration sandbox, the same commands are run inside `integ_runs/<timestamp>/project`.
 
-The pipeline uses model fallback ordering for implementation attempts:
-
-1. `qwen2.5-coder:14b`
-2. `carstenuhlig/omnicoder-9b`
-3. `deepseek-coder-v2:16b`
+The default pastebin pipeline uses `qwen3-coder:30b` for planning, implementation, debugging, test review, and final review. It intentionally does not use multi-candidate fallback; pastebin is the deterministic reliability harness.
 
 Telemetry artifacts record which agent/model handled each stage and estimate token usage.
 
-This template uses a TDD-oriented pipeline. It starts with a skeletal package, generates task-specific pytest tests from the current task acceptance criteria, reviews those tests for scope, and then implements only enough application code to pass them.
+This template uses fixed task-specific pytest files. The pipeline starts with a skeletal package, implements only the current task, runs `tests/test_{task_id_compact}.py`, and then reviews the result.

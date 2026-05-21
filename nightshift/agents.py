@@ -228,8 +228,9 @@ class AgentExecutor:
             "prompt": prompt,
             "stream": False,
         }
-        if agent.temperature is not None:
-            body["options"] = {"temperature": agent.temperature}
+        options = _ollama_options(agent)
+        if options:
+            body["options"] = options
         headers = {"Content-Type": "application/json"}
         started = time.monotonic()
         self.logger.event(
@@ -393,6 +394,21 @@ def build_prompt_bundle(
             "",
         ]
     )
+
+
+def _ollama_options(agent: AgentConfig) -> dict[str, object]:
+    options: dict[str, object] = {}
+    if agent.temperature is not None:
+        options["temperature"] = agent.temperature
+    if agent.num_ctx is not None:
+        options["num_ctx"] = agent.num_ctx
+    if agent.num_predict is not None:
+        options["num_predict"] = agent.num_predict
+    if agent.seed is not None:
+        options["seed"] = agent.seed
+    if agent.stop:
+        options["stop"] = list(agent.stop)
+    return options
 
 
 def _coerce_output(value: str | bytes | None) -> str:

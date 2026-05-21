@@ -6,6 +6,7 @@ from nightshift.artifacts import ArtifactStore
 from nightshift.commands import CommandExecutor
 from nightshift.commands import CommandRun, format_command_runs
 from nightshift.commands import _command_env
+from nightshift.commands import render_command_template
 from nightshift.config import SafetyConfig, StageConfig
 from nightshift.errors import CommandError
 import sys
@@ -16,6 +17,13 @@ FAILING_COMMAND = 'python -c "import sys; print(\'bad\'); sys.exit(7)"'
 
 
 class CommandExecutorTests(unittest.TestCase):
+    def test_render_command_template_includes_task_id_variants(self) -> None:
+        command = "python -m pytest -q tests/test_{task_id_compact}.py # {task_id_slug} {task_id}"
+
+        rendered = render_command_template(command, "TASK-001")
+
+        self.assertEqual(rendered, "python -m pytest -q tests/test_task001.py # task_001 TASK-001")
+
     def test_passing_command_stage_returns_pass_and_writes_output(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -45,6 +53,33 @@ class CommandExecutorTests(unittest.TestCase):
             output = output_path.read_text(encoding="utf-8")
             self.assertIn("Exit code: 0", output)
             self.assertIn("ok", output)
+
+    def test_command_stage_renders_task_id_before_allowlist_check(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifacts = ArtifactStore(root, ".nightshift", run_id="test-run")
+            executor = CommandExecutor(
+                root,
+                SafetyConfig(
+                    require_clean_worktree=False,
+                    scoped_paths=(".",),
+                    allowed_commands=('python -c "print(\'{task_id_compact}\')"',),
+                    forbidden_commands=("rm -rf",),
+                ),
+                artifacts,
+            )
+            stage = StageConfig(
+                id="test",
+                type="command",
+                commands=('python -c "print(\'{task_id_compact}\')"',),
+                output="test-output.txt",
+            )
+
+            result = executor.run_stage(stage, "TASK-002")
+
+            self.assertEqual(result.status, "pass")
+            output = (root / result.output_path).read_text(encoding="utf-8")
+            self.assertIn("task002", output)
 
     def test_failing_command_stage_returns_fail_and_writes_output(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

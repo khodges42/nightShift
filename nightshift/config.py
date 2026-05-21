@@ -46,6 +46,10 @@ class AgentConfig:
     temperature: float | None = None
     base_url: str | None = None
     api_key_env: str | None = None
+    num_ctx: int | None = None
+    num_predict: int | None = None
+    seed: int | None = None
+    stop: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -207,10 +211,18 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
             agent_raw.get("temperature"),
             f"agents.{agent_id}.temperature",
         )
+        num_ctx = _optional_int_or_none(agent_raw.get("num_ctx"), f"agents.{agent_id}.num_ctx")
+        num_predict = _optional_int_or_none(agent_raw.get("num_predict"), f"agents.{agent_id}.num_predict")
+        seed = _optional_int_or_none(agent_raw.get("seed"), f"agents.{agent_id}.seed")
+        stop = _string_tuple(agent_raw.get("stop", []), f"agents.{agent_id}.stop")
         if temperature is not None and temperature < 0:
             raise ConfigError(
                 f"Config error: agents.{agent_id}.temperature must be zero or greater."
             )
+        if num_ctx is not None and num_ctx <= 0:
+            raise ConfigError(f"Config error: agents.{agent_id}.num_ctx must be greater than zero.")
+        if num_predict is not None and num_predict <= 0:
+            raise ConfigError(f"Config error: agents.{agent_id}.num_predict must be greater than zero.")
         if backend not in {"command", "ollama", "openai_compatible"}:
             raise ConfigError(
                 f"Config error: agent '{agent_id}' uses unsupported backend '{backend}'. "
@@ -243,6 +255,10 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
             temperature=temperature,
             base_url=base_url,
             api_key_env=api_key_env,
+            num_ctx=num_ctx,
+            num_predict=num_predict,
+            seed=seed,
+            stop=stop,
         )
 
     experiment_raw = raw.get("experiment", {})

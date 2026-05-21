@@ -62,10 +62,18 @@ Ollama agent:
 ```yaml
 planner:
   backend: ollama
-  model: qwen2.5-coder:14b
+  model: qwen3-coder:30b
   base_url: http://localhost:11434
   system_prompt: agents/planner.md
+  temperature: 0.2
+  num_ctx: 8192
+  num_predict: 4096
+  seed: 1
+  stop:
+    - STOP
 ```
+
+Optional Ollama generation options currently supported by NightShift are `temperature`, `num_ctx`, `num_predict`, `seed`, and `stop`.
 
 ## `pipeline`
 
@@ -76,6 +84,7 @@ planner:
 Command stage options:
 
 - `commands`: command strings.
+- Command strings may use task placeholders: `{task_id}`, `{task_id_lower}`, `{task_id_slug}`, and `{task_id_compact}`.
 - `shell`: defaults to true. Set false for argv-style execution.
 - `timeout_seconds`: per-stage timeout override.
 - `working_dir`: command working directory inside project root.
@@ -141,6 +150,12 @@ Create a local integration sandbox from the NightShift repository root:
 python -m nightshift.cli integ-run --template tutorial-pastebin
 ```
 
+Create, set up, validate, and run one task from the generated project directory:
+
+```bash
+python -m nightshift.cli integ-test --template tutorial-pastebin --task TASK-001
+```
+
 Set up the generated Python project:
 
 ```bash
@@ -161,6 +176,12 @@ Preview commands without running them:
 python -m nightshift.cli integ-setup --project integ_runs/<timestamp>/project --dry-run
 ```
 
+Summarize the latest integration artifact run:
+
+```bash
+python -m nightshift.cli integ-report --latest
+```
+
 To clean up old sandboxes before creating a new one, keep only the newest three existing runs:
 
 ```bash
@@ -169,8 +190,4 @@ python -m nightshift.cli integ-run --template tutorial-pastebin --keep 3
 
 ## Pastebin Tutorial
 
-`nightshift init --template tutorial-pastebin` creates a small Flask snippet-hosting target with deterministic tests and incremental NightShift tasks. Its pipeline includes semantic context retrieval, telemetry, debugger support, and implementation fallback order:
-
-- `qwen2.5-coder:14b`
-- `carstenuhlig/omnicoder-9b`
-- `deepseek-coder-v2:16b`
+`nightshift init --template tutorial-pastebin` creates a small Flask snippet-hosting target with deterministic tests and incremental NightShift tasks. Its pipeline includes semantic context retrieval, telemetry, debugger support, fixed task-specific tests, and a single default `qwen3-coder:30b` model path.

@@ -282,6 +282,27 @@ class ConfigTests(unittest.TestCase):
 
             self.assertEqual(config.agents["planner"].temperature, 0.2)
 
+    def test_agent_ollama_options_load(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            init_project(root)
+            config_path = root / "nightshift.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace(
+                    "    system_prompt: agents/planner.md",
+                    "    system_prompt: agents/planner.md\n    num_ctx: 8192\n    num_predict: 4096\n    seed: 1\n    stop:\n      - STOP",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+
+            config = load_config(config_path)
+
+            self.assertEqual(config.agents["planner"].num_ctx, 8192)
+            self.assertEqual(config.agents["planner"].num_predict, 4096)
+            self.assertEqual(config.agents["planner"].seed, 1)
+            self.assertEqual(config.agents["planner"].stop, ("STOP",))
+
     def test_agent_temperature_must_be_number(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -105,6 +105,29 @@ class PipelineRunnerTests(unittest.TestCase):
             )
             self.assertIn("Modified Files", (root / ".nightshift" / "runs" / "test-run" / "run-summary.md").read_text(encoding="utf-8"))
 
+    def test_task_preflight_fails_when_task_specific_test_file_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            stages = (
+                StageConfig(
+                    id="test",
+                    type="command",
+                    commands=("python -m pytest -q tests/test_{task_id_compact}.py",),
+                    output="test-output.txt",
+                ),
+            )
+            config = make_config(root, stages, max_retries=0)
+            runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+            task = parse_tasks(TASK_MD)[0]
+
+            result = runner.run_task(task)
+
+            self.assertEqual(result.status, "failed")
+            self.assertIn("configured task test file is missing", result.reason)
+            task_dir = root / ".nightshift" / "runs" / "test-run" / "tasks" / task.id
+            self.assertIn("tests/test_task001.py", (task_dir / "preflight.md").read_text(encoding="utf-8"))
+
     def test_review_can_retry_implementation_until_limit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

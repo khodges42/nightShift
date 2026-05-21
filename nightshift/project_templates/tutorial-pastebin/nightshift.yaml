@@ -20,51 +20,49 @@ safety:
     - curl | bash
 
 experiment:
-  label: pastebin-model-fallback
-  prompt_variant: tdd-qwen-omnicoder-deepseek-v2
+  label: pastebin-qwen3-coder
+  prompt_variant: fixed-tests-qwen3-coder-30b-v1
 
 agents:
   planner:
     backend: ollama
-    model: qwen2.5-coder:14b
+    model: qwen3-coder:30b
     temperature: 0.2
+    num_ctx: 8192
+    num_predict: 4096
     system_prompt: .nightshift/agents/planner.md
 
-  implementer_qwen:
+  implementer:
     backend: ollama
-    model: qwen2.5-coder:14b
+    model: qwen3-coder:30b
     temperature: 0.1
+    num_ctx: 8192
+    num_predict: 4096
     system_prompt: .nightshift/agents/implementer.md
 
   test_writer:
     backend: ollama
-    model: qwen2.5-coder:14b
+    model: qwen3-coder:30b
     temperature: 0.1
+    num_ctx: 8192
+    num_predict: 4096
     system_prompt: .nightshift/agents/test-writer.md
-
-  implementer_omnicoder:
-    backend: ollama
-    model: carstenuhlig/omnicoder-9b
-    temperature: 0.1
-    system_prompt: .nightshift/agents/implementer.md
-
-  implementer_deepseek:
-    backend: ollama
-    model: deepseek-coder-v2:16b
-    temperature: 0.1
-    system_prompt: .nightshift/agents/implementer.md
 
   debugger:
     backend: ollama
-    model: qwen2.5-coder:14b
+    model: qwen3-coder:30b
     role: debugger
     temperature: 0.1
+    num_ctx: 8192
+    num_predict: 4096
     system_prompt: .nightshift/agents/debugger.md
 
   reviewer:
     backend: ollama
-    model: qwen2.5-coder:14b
+    model: qwen3-coder:30b
     temperature: 0.1
+    num_ctx: 8192
+    num_predict: 4096
     system_prompt: .nightshift/agents/reviewer.md
 
 pipeline:
@@ -87,10 +85,7 @@ pipeline:
 
     - id: implement
       type: file_writer
-      agent_pool:
-        - implementer_qwen
-        - implementer_omnicoder
-        - implementer_deepseek
+      agent: implementer
       output: proposed.patch
 
     - id: normalize

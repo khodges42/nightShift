@@ -7,8 +7,10 @@ Do not add behavior for future tasks unless needed to satisfy the current tests.
 Use Flask and `sqlite3` from the Python standard library. Do not use SQLAlchemy, Flask-SQLAlchemy, or undeclared dependencies.
 Keep the public package name `pastebin_app`.
 Keep the public app entry point `create_app(database_path: str | None = None)`.
+Respect `database_path`; do not hard-code `snippets.db` when a database path is supplied.
 Tests should interact through HTTP routes and `create_app`, not through ORM/session globals.
 Do not use `app.before_first_request`; recent Flask versions removed it. Initialize required database tables inside `create_app` or inside the route helper before use.
+When adding columns to an existing sqlite table, handle existing databases idempotently with `ALTER TABLE` checks or a simple migration helper. `CREATE TABLE IF NOT EXISTS` does not add columns to an existing table.
 
 Output only complete file content blocks.
 Use one fenced block per file:

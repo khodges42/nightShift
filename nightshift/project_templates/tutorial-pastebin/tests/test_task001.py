@@ -16,6 +16,7 @@ def test_create_snippet_returns_created_snippet_id(tmp_path):
     assert response.status_code == 201
     data = response.get_json()
     assert isinstance(data["id"], int)
+    assert (tmp_path / "snippets.db").exists()
 
 
 def test_view_snippet_returns_persisted_fields(tmp_path):
@@ -38,6 +39,7 @@ def test_view_snippet_returns_persisted_fields(tmp_path):
         "title": "View me",
         "body": "stored body",
     }
+    assert (tmp_path / "snippets.db").exists()
 
 
 def test_view_missing_snippet_returns_404(tmp_path):

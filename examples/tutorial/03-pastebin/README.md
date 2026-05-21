@@ -1,4 +1,4 @@
-# Tutorial 03: Pastebin With Model Fallback And Telemetry
+# Tutorial 03: Pastebin With Fixed Tests And Telemetry
 
 This tutorial uses the `tutorial-pastebin` template: a small Flask snippet-hosting service designed for deterministic NightShift orchestration tests.
 
@@ -17,6 +17,12 @@ For an isolated local integration run, use the integration sandbox command from 
 
 ```bash
 python -m nightshift.cli integ-run --template tutorial-pastebin
+```
+
+To create, set up, validate, and run one task in a single command:
+
+```bash
+python -m nightshift.cli integ-test --template tutorial-pastebin --task TASK-001
 ```
 
 To create the sandbox and set up the Python project immediately:
@@ -57,7 +63,7 @@ pyproject.toml
 README.md
 ```
 
-The template includes a tiny Flask `create_app(database_path=None)` scaffold and fixed `TASK-001` tests. The default tutorial pipeline asks the implementation agent to make those deterministic tests pass before review.
+The template includes a tiny Flask `create_app(database_path=None)` scaffold and fixed tests for each tutorial task. The default tutorial pipeline asks the implementation agent to make only the current task's deterministic tests pass before review.
 
 ## Prerequisites
 
@@ -73,26 +79,22 @@ Install target dependencies:
 python -m pip install -e . pytest flask
 ```
 
-Install and start Ollama, then pull the fallback models you want available:
+Install and start Ollama, then pull the default pastebin model:
 
 ```bash
-ollama pull qwen2.5-coder:14b
-ollama pull carstenuhlig/omnicoder-9b
-ollama pull deepseek-coder-v2:16b
+ollama pull qwen3-coder:30b
 ollama list
 ```
 
 NightShift uses Ollama's local HTTP API, normally at `http://localhost:11434`.
 
-## Model Fallback
+## Model
 
-The implementation stage uses this fallback order:
+The default pastebin pipeline uses one strong local coder model:
 
-1. `qwen2.5-coder:14b`
-2. `carstenuhlig/omnicoder-9b`
-3. `deepseek-coder-v2:16b`
+- `qwen3-coder:30b`
 
-NightShift records which agent/model handled each stage in `telemetry-summary.md`.
+NightShift records which agent/model handled each stage in `telemetry-summary.md`. Multi-candidate fallback belongs in a separate experiment template, not the default pastebin reliability harness.
 
 ## TDD Pipeline
 

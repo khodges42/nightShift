@@ -7,13 +7,16 @@ from pathlib import Path
 import sys
 
 from .config import validate_config
-from .errors import NightShiftError
+from .errors import ConfigError, NightShiftError
 from .init import available_templates, init_project
 from .integ import create_integration_run
+from .integ_report import build_integration_report, format_integration_report
 from .integ_setup import format_setup_result, setup_python_project
+from .integ_test import format_integration_test_result, run_integration_test
 from .pipeline import PipelineRunner
 from .runlog import RunLogger
 from .status import build_status, format_status
+from .task_tests import check_task_test_files, format_task_test_checks, missing_task_test_paths
 from .terminal import HOTDOG_ANIMATIONS, TerminalAnimation, format_banner, style_text
 from .tasks import (
     ensure_dependencies_satisfied,
@@ -105,6 +108,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print --setup commands without running them.",
     )
 
+    integ_test_parser = subparsers.add_parser(
+        "integ-test",
+        help="Create, set up, validate, and run an integration template task.",
+    )
+    integ_test_parser.add_argument("--root", default=".", help="Repository root where integ_runs/ is created.")
+    integ_test_parser.add_argument(
+        "--template",
+        default="tutorial-pastebin",
+        choices=available_templates(),
+        help="Template to initialize inside the sandbox.",
+    )
+    integ_test_parser.add_argument("--task", help="Specific task id to run.")
+    integ_test_parser.add_argument("--all", action="store_true", help="Run all runnable incomplete tasks.")
+    integ_test_parser.add_argument("--keep", type=int, help="Keep only the newest N old integration runs before creating a new one.")
+    integ_test_parser.add_argument(
+        "--setup-extra",
+        action="append",
+        default=["pytest"],
+        help="Extra package to install during setup. May be repeated. Defaults to pytest.",
+    )
+    integ_test_parser.add_argument("--setup-skip-validate", action="store_true", help="Skip validation during setup.")
+    integ_test_parser.add_argument("--dry-run", action="store_true", help="Print commands without running setup or tasks.")
+
+    integ_report_parser = subparsers.add_parser("integ-report", help="Summarize the latest integration run.")
+    integ_report_parser.add_argument("--root", default=".", help="Repository root where integ_runs/ is located.")
+    integ_report_parser.add_argument("--latest", action="store_true", help="Report the latest integration run.")
+
     setup_parser = subparsers.add_parser(
         "integ-setup",
         help="Set up a Python integration project venv and dependencies.",
@@ -160,12 +190,18 @@ def main(argv: list[str] | None = None) -> int:
             config = validate_config(args.config)
             tasks = parse_task_file(config.project.root, config.project.task_file)
             validate_task_dependencies(tasks)
+            task_test_checks = check_task_test_files(config, tasks)
+            missing_task_tests = missing_task_test_paths(task_test_checks)
+            if missing_task_tests:
+                details = format_task_test_checks(task_test_checks)
+                raise ConfigError(f"Config error: missing configured task test files.\n{details}")
             incomplete = sum(1 for task in tasks if not task.completed)
             print(f"Config valid: {config.path}")
             print(f"Project: {config.project.name}")
             print(f"Stages: {len(config.pipeline.stages)}")
             print(f"Tasks: {len(tasks)}")
             print(f"Incomplete tasks: {incomplete}")
+            print(format_task_test_checks(task_test_checks))
             return 0
 
         if args.command == "run":
@@ -254,6 +290,25 @@ def main(argv: list[str] | None = None) -> int:
                 dry_run=args.dry_run,
             )
             print(format_setup_result(result))
+            return 0
+
+        if args.command == "integ-test":
+            result = run_integration_test(
+                args.root,
+                template=args.template,
+                task=args.task,
+                all_tasks=args.all,
+                keep=args.keep,
+                setup_extras=tuple(args.setup_extra or ()),
+                skip_setup_validate=args.setup_skip_validate,
+                dry_run=args.dry_run,
+            )
+            print(format_integration_test_result(result))
+            return result.exit_code
+
+        if args.command == "integ-report":
+            report = build_integration_report(args.root, latest=True)
+            print(format_integration_report(report))
             return 0
 
     except NightShiftError as exc:
