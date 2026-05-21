@@ -58,6 +58,21 @@ class PatchTests(unittest.TestCase):
             with self.assertRaisesRegex(PipelineError, "forbidden path"):
                 validate_patch(patch, root, safety)
 
+    def test_validate_patch_enforces_stage_allowed_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "src").mkdir()
+            (root / "tests").mkdir()
+            safety = SafetyConfig(
+                require_clean_worktree=False,
+                scoped_paths=("src", "tests"),
+                allowed_commands=(),
+                forbidden_commands=(),
+            )
+
+            with self.assertRaisesRegex(PipelineError, "not allowed for this stage"):
+                validate_patch(PATCH, root, safety, allowed_paths=("tests",))
+
     def test_validate_patch_rejects_malformed_hunk_line(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -879,6 +879,7 @@ class PipelineRunner:
                 max_files=stage.max_files or DEFAULT_MAX_FILES,
                 max_changed_lines=stage.max_lines or DEFAULT_MAX_CHANGED_LINES,
                 max_delete_ratio=stage.max_delete_ratio,
+                allowed_paths=stage.allowed_paths,
                 forbidden_paths=stage.forbidden_paths or DEFAULT_FORBIDDEN_PATHS,
             )
         except PipelineError as exc:
@@ -923,6 +924,7 @@ class PipelineRunner:
                 max_files=stage.max_files or DEFAULT_MAX_FILES,
                 max_changed_lines=stage.max_lines or DEFAULT_MAX_CHANGED_LINES,
                 max_delete_ratio=stage.max_delete_ratio,
+                allowed_paths=stage.allowed_paths,
                 forbidden_paths=stage.forbidden_paths or DEFAULT_FORBIDDEN_PATHS,
             )
         except PipelineError as exc:

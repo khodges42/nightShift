@@ -3,18 +3,31 @@
 - [ ] TASK-001: Snippet creation and viewing
 
 Description:
-Complete the pastebin service foundation. Support creating snippets with title, body, optional language, optional tags, and optional expiration date. Support viewing a single snippet by id.
+Complete the pastebin service foundation. Support creating snippets with title and body. Support viewing a single snippet by id.
 
 Acceptance Criteria:
 - POST `/snippets` creates a snippet with title and body
 - GET `/snippets/<id>` returns the snippet
-- Optional language, tags, and expires_at fields are persisted
 - Tests cover creation and viewing
 
-- [ ] TASK-002: Snippet listing and filtering
+- [ ] TASK-002: Snippet metadata fields
 
 Dependencies:
 - TASK-001
+
+Description:
+Persist optional language, tags, and expiration fields on snippets.
+
+Acceptance Criteria:
+- POST `/snippets` accepts optional language, tags, and expires_at fields
+- GET `/snippets/<id>` returns persisted metadata fields
+- Tags are serialized deterministically
+- Tests cover metadata persistence
+
+- [ ] TASK-003: Snippet listing and filtering
+
+Dependencies:
+- TASK-002
 
 Description:
 Add snippet listing with newest-first ordering and deterministic search/filter behavior.
@@ -26,10 +39,10 @@ Acceptance Criteria:
 - `tag` filters by tag
 - Tests cover listing, search, and filters
 
-- [ ] TASK-003: Expiration handling
+- [ ] TASK-004: Expiration handling
 
 Dependencies:
-- TASK-002
+- TASK-003
 
 Description:
 Hide expired snippets from list/search results while keeping direct lookup behavior explicit.
@@ -40,10 +53,10 @@ Acceptance Criteria:
 - Non-expiring snippets remain visible
 - Tests cover expired and active snippets
 
-- [ ] TASK-004: HTML forms and templates
+- [ ] TASK-005: HTML forms and templates
 
 Dependencies:
-- TASK-003
+- TASK-004
 
 Description:
 Add simple HTML pages for creating, listing, filtering, and viewing snippets.

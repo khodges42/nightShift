@@ -57,7 +57,7 @@ pyproject.toml
 README.md
 ```
 
-The template intentionally does not include a working Flask app or pre-generated task tests. For each task, NightShift first generates acceptance tests from the current task's acceptance criteria, reviews those tests for scope, and then asks the implementation agent to make them pass.
+The template includes a tiny Flask `create_app(database_path=None)` scaffold and fixed `TASK-001` tests. The default tutorial pipeline asks the implementation agent to make those deterministic tests pass before review.
 
 ## Prerequisites
 
@@ -86,7 +86,7 @@ NightShift uses Ollama's local HTTP API, normally at `http://localhost:11434`.
 
 ## Model Fallback
 
-The template writes tests with `qwen2.5-coder:14b`. The implementation stage uses this fallback order:
+The implementation stage uses this fallback order:
 
 1. `qwen2.5-coder:14b`
 2. `carstenuhlig/omnicoder-9b`
@@ -99,19 +99,20 @@ NightShift records which agent/model handled each stage in `telemetry-summary.md
 The task pipeline runs in this shape:
 
 ```text
-plan -> semantic_context -> context -> write_tests -> review_tests -> implement -> pytest -> review
+plan -> semantic_context -> context -> implement -> pytest -> review
 ```
 
-Generated tests should cover only the current task. They are expected to fail before implementation, so the pipeline reviews the test patch but does not run pytest until after the implementation patch is applied.
+The default template uses fixed task tests instead of model-generated tests. This keeps the tutorial focused on implementation and NightShift orchestration instead of letting a test-writing model invent an incompatible architecture.
 
 ## Task Plan
 
 The template writes the full task list to `.nightshift/tasks.md`. A copy is included here as [tasks.md](tasks.md).
 
 1. Snippet creation and viewing
-2. Snippet listing and filtering
-3. Expiration handling
-4. HTML forms and templates
+2. Snippet metadata fields
+3. Snippet listing and filtering
+4. Expiration handling
+5. HTML forms and templates
 
 Run one task first:
 

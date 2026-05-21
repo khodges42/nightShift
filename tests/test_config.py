@@ -214,7 +214,7 @@ class ConfigTests(unittest.TestCase):
             config_path.write_text(
                 config_path.read_text(encoding="utf-8").replace(
                     "    - id: summarize",
-                    "    - id: validate_patch\n      type: patch_validator\n      max_files: 2\n      max_lines: 100\n      forbidden_paths:\n        - secrets\n\n    - id: summarize",
+                    "    - id: validate_patch\n      type: patch_validator\n      max_files: 2\n      max_lines: 100\n      allowed_paths:\n        - tests\n      forbidden_paths:\n        - secrets\n\n    - id: summarize",
                     1,
                 ),
                 encoding="utf-8",
@@ -225,6 +225,7 @@ class ConfigTests(unittest.TestCase):
 
             self.assertEqual(patch_stage.max_files, 2)
             self.assertEqual(patch_stage.max_lines, 100)
+            self.assertEqual(patch_stage.allowed_paths, ("tests",))
             self.assertEqual(patch_stage.forbidden_paths, ("secrets",))
 
     def test_file_writer_stage_requires_agent(self) -> None:

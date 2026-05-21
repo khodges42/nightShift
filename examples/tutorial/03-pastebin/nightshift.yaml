@@ -13,7 +13,7 @@ safety:
     - pyproject.toml
     - README.md
   allowed_commands:
-    - python -m pytest -q
+    - python -m pytest -q tests/test_{task_id_compact}.py
   forbidden_commands:
     - rm -rf
     - git push
@@ -85,35 +85,6 @@ pipeline:
       type: repo_context
       output: context-pack.md
 
-    - id: write_tests
-      type: file_writer
-      agent: test_writer
-      output: proposed-tests.patch
-
-    - id: normalize_tests
-      type: patch_normalizer
-      output: normalized-tests.patch
-
-    - id: validate_tests_patch
-      type: patch_validator
-      output: test-patch-validation.md
-      max_files: 6
-      max_lines: 500
-      max_delete_ratio: 0.70
-      on_fail: write_tests
-
-    - id: apply_tests_patch
-      type: patch_apply
-      mode: apply
-      output: test-patch-apply-output.txt
-      on_fail: write_tests
-
-    - id: review_tests
-      type: agent_review
-      agent: reviewer
-      output: test-review.md
-      on_fail: write_tests
-
     - id: implement
       type: file_writer
       agent_pool:
@@ -132,6 +103,10 @@ pipeline:
       max_files: 12
       max_lines: 900
       max_delete_ratio: 0.70
+      allowed_paths:
+        - src
+        - templates
+        - README.md
       on_fail: implement
 
     - id: apply_patch
@@ -143,7 +118,7 @@ pipeline:
     - id: test
       type: command
       commands:
-        - python -m pytest -q
+        - python -m pytest -q tests/test_{task_id_compact}.py
       output: test-output.txt
       shell: true
       timeout_seconds: 25

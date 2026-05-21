@@ -85,6 +85,7 @@ Patch validator stage options:
 - `max_files`: max files changed.
 - `max_lines`: max changed lines.
 - `max_delete_ratio`: reject deletion-heavy patches above this deleted-line share, from `0.0` to `1.0`.
+- `allowed_paths`: optional stage-specific allowlist. If set, every changed path must be inside one of these paths.
 - `forbidden_paths`: paths the patch must not touch.
 - Unified diff hunk line prefixes and hunk line counts are validated before patch apply.
 - The patch normalizer recomputes hunk line counts from hunk bodies for direct unified diff output.

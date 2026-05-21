@@ -63,6 +63,7 @@ class StageConfig:
     max_files: int | None = None
     max_lines: int | None = None
     max_delete_ratio: float | None = None
+    allowed_paths: tuple[str, ...] = ()
     forbidden_paths: tuple[str, ...] = ()
     mode: str | None = None
 
@@ -381,6 +382,10 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
                 max_files=max_files,
                 max_lines=max_lines,
                 max_delete_ratio=max_delete_ratio,
+                allowed_paths=_string_tuple(
+                    stage_raw.get("allowed_paths", []),
+                    f"{stage_context}.allowed_paths",
+                ),
                 forbidden_paths=_string_tuple(
                     stage_raw.get("forbidden_paths", []),
                     f"{stage_context}.forbidden_paths",

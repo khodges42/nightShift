@@ -5,6 +5,7 @@ import unittest
 
 from nightshift.artifacts import ArtifactStore
 from nightshift.config import parse_config, StageConfig
+from nightshift.dependencies import diagnose_python_dependencies
 from nightshift.escalation import evaluate_retry_churn
 from nightshift.failures import build_failure_signature, classify_failure
 from nightshift.integ import cleanup_integration_runs, create_integration_run
@@ -37,6 +38,38 @@ class ReliabilityFeatureTests(unittest.TestCase):
 
         self.assertEqual(result.category, "missing dependency")
         self.assertIn("pastebin_app", result.probable_root_cause)
+
+    def test_failure_classifier_detects_local_import_mismatch(self) -> None:
+        result = classify_failure(
+            "\n".join(
+                [
+                    "ImportError while importing test module 'tests/test_snippets.py'.",
+                    "tests/test_snippets.py:2: in <module>",
+                    "    from app import app, session, Snippet",
+                    "E   ModuleNotFoundError: No module named 'app'",
+                ]
+            ),
+            exit_code=2,
+        )
+
+        self.assertEqual(result.category, "local import mismatch")
+        self.assertIn("project package layout", result.probable_root_cause)
+
+    def test_dependency_diagnostic_does_not_treat_local_imports_as_packages(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
+
+            result = diagnose_python_dependencies(root, "ModuleNotFoundError: No module named 'models'")
+
+            self.assertEqual(result.missing_imports, ("models",))
+            self.assertIn("local module import mistakes", result.recommendation)
+
+    def test_failure_classifier_detects_no_tests_ran(self) -> None:
+        result = classify_failure("no tests ran in 0.19s", exit_code=5)
+
+        self.assertEqual(result.category, "test expectation mismatch")
+        self.assertIn("did not collect any tests", result.probable_root_cause)
 
     def test_failure_classifier_treats_traceback_into_source_as_logic_bug(self) -> None:
         result = classify_failure(

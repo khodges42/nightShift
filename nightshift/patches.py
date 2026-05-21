@@ -145,6 +145,7 @@ def validate_patch(
     max_files: int = DEFAULT_MAX_FILES,
     max_changed_lines: int = DEFAULT_MAX_CHANGED_LINES,
     max_delete_ratio: float | None = None,
+    allowed_paths: tuple[str, ...] = (),
     forbidden_paths: tuple[str, ...] = DEFAULT_FORBIDDEN_PATHS,
 ) -> PatchValidationResult:
     root = resolve_project_root(project_root)
@@ -171,10 +172,24 @@ def validate_patch(
 
     for path_text in files:
         _validate_patch_path(path_text, root, scoped_roots, forbidden_paths)
+        _validate_allowed_patch_path(path_text, root, allowed_paths)
     _validate_hunk_lines(patch)
     _validate_hunk_counts(patch)
     _validate_file_states(patch, root)
     return PatchValidationResult(files=tuple(sorted(files)), changed_lines=changed_lines)
+
+
+def _validate_allowed_patch_path(path_text: str, root: Path, allowed_paths: tuple[str, ...]) -> None:
+    if not allowed_paths:
+        return
+    allowed_roots = validate_scoped_paths(root, allowed_paths)
+    target = resolve_inside_root(root, path_text, f"patch path '{path_text}'")
+    if not any(target == allowed_root or allowed_root in target.parents for allowed_root in allowed_roots):
+        allowed = ", ".join(allowed_paths)
+        raise PipelineError(
+            f"Patch validation failed: path `{path_text}` is not allowed for this stage. "
+            f"Allowed paths: {allowed}."
+        )
 
 
 def format_validation_result(result: PatchValidationResult) -> str:

@@ -8,6 +8,7 @@ import re
 
 FAILURE_CATEGORIES = (
     "syntax/import error",
+    "local import mismatch",
     "missing dependency",
     "missing resource/fixture",
     "environment/config issue",
@@ -37,11 +38,30 @@ def classify_failure(output: str, exit_code: int | None = None, modified_files: 
     exception_name = _extract_exception_name(text)
     source_path, _ = _extract_traceback_location(text)
 
+    if re.search(r"\bno tests ran\b", text, re.IGNORECASE) or exit_code == 5:
+        return FailureClassification(
+            "test expectation mismatch",
+            "Pytest did not collect any tests; generated changes likely removed, renamed, or invalidated the test suite.",
+            0.84,
+            "Restore the expected tests or block the stage from editing test files.",
+            "repair test files or reject the patch that removed tests",
+            failing_tests,
+        )
+
     missing = re.search(r"No module named ['\"]([^'\"]+)['\"]", text, re.IGNORECASE)
     if not missing:
         missing = re.search(r"ModuleNotFoundError:\s*['\"]?([A-Za-z0-9_.-]+)", text, re.IGNORECASE)
     if missing:
         package = missing.group(1) or "unknown package"
+        if _looks_like_local_module_name(package):
+            return FailureClassification(
+                "local import mismatch",
+                f"Generated code imports local module `{package}` that does not match the project package layout.",
+                0.88,
+                "Repair imports to use the configured package path or package-relative imports.",
+                "retry the stage that introduced the bad import",
+                failing_tests,
+            )
         return FailureClassification(
             "missing dependency",
             f"Runtime cannot import required package `{package}`.",
@@ -192,6 +212,11 @@ def _extract_command(text: str) -> str:
 def _looks_like_project_source(path: str) -> bool:
     normalized = path.replace("\\", "/").lower()
     return "/src/" in normalized or "/tests/" in normalized
+
+
+def _looks_like_local_module_name(name: str) -> bool:
+    root = name.split(".")[0].lower()
+    return root in {"app", "apps", "model", "models", "route", "routes", "view", "views", "main"}
 
 
 def _traceback_score(path: str) -> int:

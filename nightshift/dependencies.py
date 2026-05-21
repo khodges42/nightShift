@@ -25,8 +25,20 @@ def diagnose_python_dependencies(project_root: Path, failure_output: str) -> Dep
         for relative in ("pyproject.toml", "requirements.txt", "poetry.lock", "uv.lock")
         if (project_root / relative).exists()
     )
+    local_imports = tuple(name for name in imports if _looks_like_local_module_name(name))
+    external_imports = tuple(name for name in imports if name not in local_imports)
     if not imports:
         recommendation = "No missing Python import was detected."
+    elif local_imports and not external_imports:
+        recommendation = (
+            "These look like local module import mistakes, not installable dependencies. "
+            "Use the configured package path or package-relative imports."
+        )
+    elif local_imports:
+        recommendation = (
+            "Some missing imports look like local module mistakes. Fix those imports first; "
+            "only add declared third-party packages for the remaining external imports."
+        )
     elif "pyproject.toml" in manifests:
         recommendation = "Add the missing package to pyproject.toml, then install with the configured tool."
     elif "requirements.txt" in manifests:
@@ -34,6 +46,11 @@ def diagnose_python_dependencies(project_root: Path, failure_output: str) -> Dep
     else:
         recommendation = "Create a Python dependency manifest or install the missing package in the active environment."
     return DependencyDiagnostic(tuple(imports), manifests, recommendation)
+
+
+def _looks_like_local_module_name(name: str) -> bool:
+    root = name.split(".")[0].lower()
+    return root in {"app", "apps", "model", "models", "route", "routes", "view", "views", "main"}
 
 
 def format_dependency_diagnostic(diagnostic: DependencyDiagnostic) -> str:
