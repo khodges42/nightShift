@@ -11,6 +11,7 @@ story/chapters/**/*.md
 story/chapters/*.md
 
 # NightShift artifacts.
+.nightshift/tasks.md
 .nightshift/runs/
 .nightshift/project-context.md
 .nightshift/project-context-chart.md
