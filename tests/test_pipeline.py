@@ -715,6 +715,49 @@ Acceptance Criteria:
             self.assertEqual(result.status, "complete")
             self.assertIn("+new", patch.read_text(encoding="utf-8"))
 
+    def test_file_writer_invalid_output_retry_uses_compact_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            (root / "app.py").write_text("old\n", encoding="utf-8")
+            (root / "fake_writer.py").write_text(
+                "\n".join(
+                    [
+                        "import sys",
+                        "prompt = sys.stdin.read()",
+                        "if 'Previous file_writer output was invalid' not in prompt:",
+                        "    print('```file:app.py')",
+                        "    print('x' * 5000)",
+                        "else:",
+                        "    (open('retry-prompt.txt', 'w', encoding='utf-8').write(prompt))",
+                        "    print('```file:app.py')",
+                        "    print('new')",
+                        "    print('```')",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            stages = (
+                StageConfig(id="write", type="file_writer", agent="writer"),
+                StageConfig(id="validate", type="patch_validator"),
+            )
+            config = make_config(root, stages)
+            config.agents["writer"] = AgentConfig(
+                id="writer",
+                backend="command",
+                command="python fake_writer.py",
+                system_prompt=Path("planner.md"),
+            )
+            runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+
+            result = runner.run_task(parse_tasks(TASK_MD)[0])
+
+            retry_prompt = (root / "retry-prompt.txt").read_text(encoding="utf-8")
+            self.assertEqual(result.status, "complete")
+            self.assertIn("invalid_file_writer_output_summary", retry_prompt)
+            self.assertIn("... <truncated>", retry_prompt)
+            self.assertLess(len(retry_prompt), 9000)
+
     def test_patch_validator_rejects_unsafe_patch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

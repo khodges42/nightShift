@@ -12,6 +12,7 @@ from nightshift.terminal import (
     animation_frames,
     format_banner,
     format_console_event_line,
+    should_animate,
 )
 
 
@@ -44,6 +45,26 @@ class TerminalStylingTests(unittest.TestCase):
             pass
 
         self.assertEqual(stream.getvalue(), "")
+
+    def test_terminal_animation_renders_immediately_when_started(self) -> None:
+        stream = FakeTTY()
+        animation = TerminalAnimation(
+            name="status_dots",
+            message="Starting",
+            stream=stream,
+            interval_seconds=60,
+        )
+
+        animation.start()
+        output = stream.getvalue()
+        animation.stop()
+
+        self.assertIn("[.  ] | Starting", output)
+
+    def test_terminal_animation_does_not_depend_on_color_output(self) -> None:
+        stream = FakeTTY()
+        with patch.dict("os.environ", {"NO_COLOR": "1"}):
+            self.assertTrue(should_animate(stream))
 
     def test_console_event_line_colors_success_and_failure(self) -> None:
         success = format_console_event_line(

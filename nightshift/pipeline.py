@@ -771,10 +771,14 @@ class PipelineRunner:
                         task_id=task.id,
                     )
                     rerun_outputs = dict(enriched_outputs)
-                    rerun_outputs["invalid_file_writer_output"] = stdout
+                    rerun_outputs["invalid_file_writer_output_summary"] = _invalid_file_writer_output_summary(
+                        stdout,
+                        str(exc),
+                    )
                     strict_notes = [
                         *retry_notes,
                         "Previous file_writer output was invalid. Return complete file blocks now. Do not output lookup_requests, prose, or 'lookup failed'.",
+                        "Use complete fenced file blocks with both the opening ```file:path and closing ``` fence.",
                     ]
                     result = self.agent_executor.run_stage(
                         agent_stage,
@@ -1527,6 +1531,24 @@ def _filter_future_task_test_lines(text: str, task_id: str) -> str:
             continue
         kept.append(line)
     return "\n".join(kept)
+
+
+def _invalid_file_writer_output_summary(output: str, reason: str, max_chars: int = 1200) -> str:
+    lines = [
+        f"Reason: {reason}",
+        f"Output length: {len(output)} characters",
+    ]
+    lowered = output.lower()
+    if "```file:" in lowered or "```path:" in lowered:
+        lines.append("The output started a file block, but NightShift could not parse a complete closed block.")
+    else:
+        lines.append("The output did not contain a parseable file block.")
+    excerpt = output.strip()
+    if excerpt:
+        if len(excerpt) > max_chars:
+            excerpt = excerpt[:max_chars].rstrip() + "\n... <truncated>"
+        lines.extend(["", "Excerpt:", "```text", excerpt, "```"])
+    return "\n".join(lines)
 
 
 def _repeated_protected_path_violation(entries: tuple[RetryMemoryEntry, ...]) -> bool:

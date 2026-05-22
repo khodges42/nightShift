@@ -460,15 +460,17 @@ def output_contract_for(stage: StageConfig) -> str:
             ]
         )
     if stage.type == "file_writer":
+        allowed = _format_allowed_file_writer_paths(stage.allowed_paths)
         return "\n".join(
             [
                 "Return complete file contents only.",
                 "Use one fenced block per file with this exact opening form:",
-                "```file:relative/path.py",
+                "```file:path/inside/project.ext",
                 "<complete file content>",
                 "```",
+                allowed,
                 "Do not include prose outside file blocks.",
-                "Include every file needed for the task, including tests.",
+                "Include only files required for this stage and task.",
                 "NightShift will generate the unified diff deterministically.",
                 "On repair attempts, use the retry notes and failed stage output to diagnose the root cause before changing files.",
                 "Do not repeat an unchanged solution unless the failure output shows the implementation is already correct.",
@@ -512,6 +514,13 @@ def output_contract_for(stage: StageConfig) -> str:
             ]
         )
     return "Write the requested stage output in concise markdown."
+
+
+def _format_allowed_file_writer_paths(allowed_paths: tuple[str, ...]) -> str:
+    if not allowed_paths:
+        return "Use real project-relative paths, not placeholder paths."
+    paths = ", ".join(f"`{path}`" for path in allowed_paths)
+    return f"Use only paths under these project-relative targets: {paths}."
 
 
 def parse_review_output(output: str) -> tuple[StageStatus, str, str | None, str | None]:

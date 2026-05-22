@@ -23,7 +23,7 @@ experiment:
 agents:
   planner:
     backend: ollama
-    model: hf.co/TheDrummer/Snowpiercer-15B-v4-GGUF:Q5_K_M
+    model: nightshift-base
     temperature: 0.4
     num_ctx: 8192
     num_predict: 4096
@@ -31,15 +31,15 @@ agents:
 
   drafter:
     backend: ollama
-    model: hf.co/TheDrummer/Snowpiercer-15B-v4-GGUF:Q5_K_M
+    model: nightshift-writer
     temperature: 0.7
-    num_ctx: 8192
-    num_predict: 4096
+    num_ctx: 16384
+    num_predict: 8192
     system_prompt: .nightshift/agents/drafter.md
 
   continuity_reviewer:
     backend: ollama
-    model: hf.co/TheDrummer/Snowpiercer-15B-v4-GGUF:Q5_K_M
+    model: nightshift-base
     temperature: 0.2
     num_ctx: 8192
     num_predict: 4096
@@ -47,7 +47,7 @@ agents:
 
   style_reviewer:
     backend: ollama
-    model: hf.co/TheDrummer/Snowpiercer-15B-v4-GGUF:Q5_K_M
+    model: nightshift-base
     temperature: 0.3
     num_ctx: 8192
     num_predict: 4096
@@ -55,9 +55,9 @@ agents:
 
   state_updater:
     backend: ollama
-    model: hf.co/TheDrummer/Snowpiercer-15B-v4-GGUF:Q5_K_M
+    model: nightshift-writer
     temperature: 0.2
-    num_ctx: 8192
+    num_ctx: 16384
     num_predict: 4096
     system_prompt: .nightshift/agents/state-updater.md
 
@@ -83,6 +83,8 @@ pipeline:
       type: file_writer
       agent: drafter
       output: scene-draft.patch
+      allowed_paths:
+        - story/chapters
 
     - id: normalize_draft
       type: patch_normalizer
@@ -120,6 +122,11 @@ pipeline:
       type: file_writer
       agent: state_updater
       output: state-update.patch
+      allowed_paths:
+        - story/plot-state.md
+        - story/characters.md
+        - story/timeline.md
+        - story/unresolved-threads.md
 
     - id: normalize_state
       type: patch_normalizer

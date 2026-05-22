@@ -119,6 +119,8 @@ class InitProjectTests(unittest.TestCase):
             self.assertTrue((root / "story" / "plot-state.md").exists())
             self.assertTrue((root / "story" / "chapters" / ".gitkeep").exists())
             self.assertIn("type: file_writer", config)
+            self.assertIn("model: nightshift-writer", config)
+            self.assertIn("model: nightshift-base", config)
             self.assertIn("story/chapters", config)
             self.assertIn("story/worldbuilding.md", gitignore)
             self.assertIn("story/chapters/**/*.md", gitignore)

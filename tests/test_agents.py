@@ -71,6 +71,27 @@ class AgentExecutorTests(unittest.TestCase):
 
         self.assertIn("On repair attempts", prompt)
         self.assertIn("failed stage output", prompt)
+        self.assertIn("Use real project-relative paths", prompt)
+        self.assertNotIn("relative/path.py", prompt)
+        self.assertNotIn("including tests", prompt)
+
+    def test_file_writer_contract_includes_stage_allowed_paths(self) -> None:
+        task = parse_tasks(TASK_MD)[0]
+        prompt = build_prompt_bundle(
+            system_prompt="System rules",
+            stage=StageConfig(
+                id="write",
+                type="file_writer",
+                agent="writer",
+                allowed_paths=("story/chapters",),
+            ),
+            project_context="Project context",
+            task=task,
+            previous_outputs={},
+            retry_notes=[],
+        )
+
+        self.assertIn("Use only paths under these project-relative targets: `story/chapters`.", prompt)
 
     def test_command_agent_writes_output_and_returns_pass(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

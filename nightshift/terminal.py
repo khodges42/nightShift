@@ -161,7 +161,7 @@ class TerminalAnimation:
         self.message = message
         self.stream = stream or sys.stderr
         self.interval_seconds = interval_seconds
-        self.enabled = enabled and should_style(self.stream)
+        self.enabled = enabled and should_animate(self.stream)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._width = 0
@@ -177,6 +177,7 @@ class TerminalAnimation:
     def start(self) -> None:
         if not self.enabled or self._thread is not None:
             return
+        self._render_frame(0)
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
@@ -193,17 +194,20 @@ class TerminalAnimation:
             self.message = message
 
     def _run(self) -> None:
-        index = 0
+        index = 1
         while not self._stop.is_set():
-            frame = self.frames[index % len(self.frames)]
-            with self._lock:
-                message = self.message
-            text = f"{frame} | {message}"
-            self._width = max(self._width, len(text))
-            self.stream.write("\r" + text.ljust(self._width))
-            self.stream.flush()
+            self._render_frame(index)
             index += 1
             self._stop.wait(self.interval_seconds)
+
+    def _render_frame(self, index: int) -> None:
+        frame = self.frames[index % len(self.frames)]
+        with self._lock:
+            message = self.message
+        text = f"{frame} | {message}"
+        self._width = max(self._width, len(text))
+        self.stream.write("\r" + text.ljust(self._width))
+        self.stream.flush()
 
     def _clear(self) -> None:
         if not self.enabled:
@@ -217,6 +221,20 @@ def animation_frames(name: str) -> tuple[str, ...]:
     if not frames:
         frames = HOTDOG_ANIMATIONS["agent_thinking"]
     return tuple(frames)
+
+
+def should_animate(stream: TextIO | None = None) -> bool:
+    stream = stream or sys.stderr
+    if os.environ.get("TERM") == "dumb":
+        return False
+    if bool(getattr(stream, "isatty", lambda: False)()):
+        return True
+    if stream is sys.stderr and bool(getattr(sys.stdout, "isatty", lambda: False)()):
+        return True
+    if stream is sys.stdout and bool(getattr(sys.stderr, "isatty", lambda: False)()):
+        return True
+    return False
+
 
 def should_style(stream: TextIO | None = None) -> bool:
     stream = stream or sys.stdout
