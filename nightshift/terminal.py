@@ -6,6 +6,7 @@ import os
 import sys
 from typing import TextIO
 import random
+import shutil
 import threading
 import time
 
@@ -166,6 +167,7 @@ class TerminalAnimation:
         self._thread: threading.Thread | None = None
         self._width = 0
         self._lock = threading.Lock()
+        self._last_rendered = ""
 
     def __enter__(self) -> "TerminalAnimation":
         self.start()
@@ -193,6 +195,25 @@ class TerminalAnimation:
         with self._lock:
             self.message = message
 
+    def emit(self, line: str) -> None:
+        if not self.enabled:
+            print(line)
+            return
+        with self._lock:
+            message = self.message
+        self._clear()
+        print(line)
+        with self._lock:
+            self.message = message
+        self._render_frame(0)
+
+    def finish(self, message: str, *, status: str = "") -> None:
+        if not self.enabled:
+            return
+        self.stop()
+        line = format_status_bar_message(message, status=status, stream=self.stream)
+        print(line)
+
     def _run(self) -> None:
         index = 1
         while not self._stop.is_set():
@@ -205,8 +226,10 @@ class TerminalAnimation:
         with self._lock:
             message = self.message
         text = f"{frame} | {message}"
-        self._width = max(self._width, len(text))
-        self.stream.write("\r" + text.ljust(self._width))
+        visible_width = terminal_text_width(text)
+        self._width = max(self._width, visible_width)
+        self._last_rendered = text
+        self.stream.write("\r" + text + (" " * max(0, self._width - visible_width)))
         self.stream.flush()
 
     def _clear(self) -> None:
@@ -243,6 +266,31 @@ def should_style(stream: TextIO | None = None) -> bool:
     if os.environ.get("TERM") == "dumb":
         return False
     return bool(getattr(stream, "isatty", lambda: False)())
+
+
+def terminal_text_width(text: str) -> int:
+    return len(strip_ansi_escape_sequences(text))
+
+
+def terminal_columns(default: int = 100) -> int:
+    return shutil.get_terminal_size((default, 20)).columns
+
+
+def truncate_terminal_text(text: str, max_width: int) -> str:
+    if max_width <= 1 or terminal_text_width(text) <= max_width:
+        return text
+    plain = strip_ansi_escape_sequences(text)
+    return plain[: max_width - 1].rstrip() + "…"
+
+
+def format_status_bar_message(message: str, *, status: str = "", stream: TextIO | None = None) -> str:
+    label = "NightShift"
+    if status:
+        label = f"{label} {status.upper()}"
+    color = _status_color(status) or CYAN
+    prefix = style_text(f"[{label}]", color=color, bold=True, stream=stream)
+    available = max(20, terminal_columns() - terminal_text_width(prefix) - 4)
+    return f"{prefix} {truncate_terminal_text(message, available)}"
 
 
 def style_text(text: str, *, color: str | None = None, bold: bool = False, dim: bool = False, stream: TextIO | None = None) -> str:
@@ -305,7 +353,7 @@ def format_console_event_line(
     color = _event_color(event, fields)
     if color is None:
         return line
-    return style_text(line, color=color, stream=stream)
+    return style_text(_decorate_event_line(line, event, fields), color=color, bold=_event_bold(event, fields), stream=stream)
 
 
 def format_plain_event_line(timestamp: str, event: str, message: str, fields: dict[str, object]) -> str:
@@ -336,6 +384,50 @@ def _event_color(event: str, fields: dict[str, object]) -> str | None:
     if "command" in event_name:
         return CYAN
     return None
+
+
+def _status_color(status: str) -> str | None:
+    normalized = status.lower()
+    if normalized in {"complete", "pass", "success", "ok"}:
+        return GREEN
+    if normalized in {"fail", "failed", "error"}:
+        return RED
+    if normalized in {"retry", "warning", "warn", "blocked"}:
+        return YELLOW
+    return None
+
+
+def _event_bold(event: str, fields: dict[str, object]) -> bool:
+    event_name = event.lower()
+    status = str(fields.get("status", "")).lower()
+    return event_name in {"stage.start", "stage.finish", "stage.retry", "task.finish"} or status in {
+        "failed",
+        "fail",
+        "error",
+    }
+
+
+def _decorate_event_line(line: str, event: str, fields: dict[str, object]) -> str:
+    event_name = event.lower()
+    if event_name == "stage.start":
+        return f">> {line}"
+    if event_name == "stage.finish":
+        status = str(fields.get("status", "")).lower()
+        marker = "!!" if status in {"fail", "failed", "error"} else "OK"
+        return f"{marker} {line}"
+    if event_name == "stage.retry":
+        return f"RETRY {line}"
+    if event_name == "task.finish":
+        status = str(fields.get("status", "")).lower()
+        marker = "DONE" if status == "complete" else "FAIL"
+        return f"{marker} {line}"
+    return line
+
+
+def strip_ansi_escape_sequences(text: str) -> str:
+    import re
+
+    return re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
 
 
 def _format_value(value: object) -> str:

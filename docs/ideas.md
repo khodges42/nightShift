@@ -99,6 +99,34 @@ Examples:
 
 This keeps the initial useful output visible even when strict rerun output is worse.
 
+## P1: Store Raw Agent Invocations As JSON
+
+The human-readable agent artifact wraps stdout, stderr, and prompts in markdown fences. Nested markdown fences from model output can confuse downstream parsing.
+
+Write a machine-readable artifact alongside the markdown artifact:
+
+```text
+<stage>-agent-output.json
+```
+
+Suggested fields:
+
+```json
+{
+  "agent_id": "drafter",
+  "stage_id": "draft_scene",
+  "command": "POST http://localhost:11434/api/generate",
+  "exit_code": 0,
+  "timed_out": false,
+  "duration_seconds": 12.3,
+  "stdout": "...",
+  "stderr": "...",
+  "prompt": "..."
+}
+```
+
+Pipeline parsing should read raw JSON fields instead of recovering stdout from markdown.
+
 ## P1: Add A Writing-Mode Validator
 
 Add deterministic checks for prose workflows:

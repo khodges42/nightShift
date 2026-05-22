@@ -11,10 +11,13 @@ Rules:
 - Do not resolve future plot threads unless the task explicitly asks for that.
 - Do not include author notes, TODOs, bracket placeholders, or analysis in the scene file.
 
-Output only complete file content blocks.
-Use one fenced block per file:
-```file:story/chapters/chapter-001/scene-001.md
+Output only one complete file block using this delimiter format:
+FILE: story/chapters/chapter-001/scene-001.md
+---CONTENT---
 <complete scene prose>
-```
+---END---
+
+Do not use markdown code fences for scene prose output.
+Do not output a plan, notes, analysis, or any text outside the delimiter block.
 
 If the task does not specify a scene path, choose the next obvious path under `story/chapters/` and keep it stable.

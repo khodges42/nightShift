@@ -93,6 +93,7 @@ def parse_file_updates(text: str) -> tuple[FileUpdate, ...]:
     """Parse model-supplied complete file content blocks."""
 
     updates: list[FileUpdate] = []
+    updates.extend(_parse_delimited_file_updates(text))
     pattern = re.compile(
         r"```(?:file|path)[:=](?P<path>[^\n`]+)\n(?P<content>.*?)```",
         flags=re.DOTALL | re.IGNORECASE,
@@ -105,9 +106,22 @@ def parse_file_updates(text: str) -> tuple[FileUpdate, ...]:
         updates.append(FileUpdate(path=path, content=content))
     if not updates:
         raise PipelineError(
-            "File writer error: no file blocks found. Expected fenced blocks like ```file:path.py."
+            "File writer error: no file blocks found. Expected FILE: path with ---CONTENT---/---END--- or fenced blocks like ```file:path.py."
         )
     return tuple(updates)
+
+
+def _parse_delimited_file_updates(text: str) -> list[FileUpdate]:
+    pattern = re.compile(
+        r"(?ms)^FILE:\s*(?P<path>[^\n]+)\n---CONTENT---\n(?P<content>.*?)\n---END---\s*$"
+    )
+    updates: list[FileUpdate] = []
+    for match in pattern.finditer(text):
+        path = match.group("path").strip().strip("`")
+        content = match.group("content")
+        if path:
+            updates.append(FileUpdate(path=path, content=content + "\n"))
+    return updates
 
 
 def generate_patch_from_file_updates(

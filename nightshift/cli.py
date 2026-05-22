@@ -216,8 +216,9 @@ def main(argv: list[str] | None = None) -> int:
                     message="Starting all tasks",
                     enabled=not args.no_animation,
                 ) as animation:
-                    runner = PipelineRunner(config, logger=RunLogger(console=print, status=animation.update_message))
+                    runner = PipelineRunner(config, logger=RunLogger(console=animation.emit, status=animation.update_message))
                     result = runner.run_tasks(tasks)
+                animation.finish(f"Tasks run: {len(result.task_results)} | Completed: {result.completed_count} | Failed: {result.failed_count}", status=result.status)
                 print(f"Status: {result.status}")
                 print(f"Tasks run: {len(result.task_results)}")
                 print(f"Completed: {result.completed_count}")
@@ -232,8 +233,9 @@ def main(argv: list[str] | None = None) -> int:
                 message=f"Task: {task.id} | Starting",
                 enabled=not args.no_animation,
             ) as animation:
-                runner = PipelineRunner(config, logger=RunLogger(console=print, status=animation.update_message))
+                runner = PipelineRunner(config, logger=RunLogger(console=animation.emit, status=animation.update_message))
                 result = runner.run_task(task)
+            animation.finish(f"Task: {result.task_id} | Retries: {result.retry_count} | {result.reason}", status=result.status)
             print(f"Task: {result.task_id}")
             print(style_text(f"Status: {result.status}", color=_status_color(result.status), bold=True))
             print(f"Retries: {result.retry_count}")

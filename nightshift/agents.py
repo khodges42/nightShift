@@ -460,16 +460,14 @@ def output_contract_for(stage: StageConfig) -> str:
             ]
         )
     if stage.type == "file_writer":
+        contract = _file_writer_block_contract(stage)
         allowed = _format_allowed_file_writer_paths(stage.allowed_paths)
         return "\n".join(
             [
                 "Return complete file contents only.",
-                "Use one fenced block per file with this exact opening form:",
-                "```file:path/inside/project.ext",
-                "<complete file content>",
-                "```",
+                contract,
                 allowed,
-                "Do not include prose outside file blocks.",
+                "Do not include prose outside file blocks or delimiter blocks.",
                 "Include only files required for this stage and task.",
                 "NightShift will generate the unified diff deterministically.",
                 "On repair attempts, use the retry notes and failed stage output to diagnose the root cause before changing files.",
@@ -514,6 +512,30 @@ def output_contract_for(stage: StageConfig) -> str:
             ]
         )
     return "Write the requested stage output in concise markdown."
+
+
+def _file_writer_block_contract(stage: StageConfig) -> str:
+    normalized = tuple(path.replace("\\", "/").rstrip("/") for path in stage.allowed_paths)
+    if normalized == ("story/chapters",):
+        return "\n".join(
+            [
+                "Use exactly this delimiter format for the scene file:",
+                "FILE: story/chapters/chapter-001/scene-001.md",
+                "---CONTENT---",
+                "<complete scene prose>",
+                "---END---",
+                "Do not use markdown code fences for prose scene output.",
+            ]
+        )
+    return "\n".join(
+        [
+            "Use one fenced block per file with this exact opening form:",
+            "```file:path/inside/project.ext",
+            "<complete file content>",
+            "```",
+            "Alternatively, use FILE: path with ---CONTENT--- and ---END--- delimiters.",
+        ]
+    )
 
 
 def _format_allowed_file_writer_paths(allowed_paths: tuple[str, ...]) -> str:

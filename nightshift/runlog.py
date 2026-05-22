@@ -92,17 +92,19 @@ def format_status_event_message(event: str, message: str, fields: dict[str, obje
         return f"Task: {task_id} | Starting" if task_id else "Starting task"
     if event == "stage.start" and stage_id:
         label = f"{stage_id} ({stage_type})" if stage_type else stage_id
-        return f"{prefix}Stage: {label}{retry_text}"
+        return f"{prefix}>> Stage: {label}{retry_text}"
     if event == "agent.start":
         model_text = f" | Model: {model}" if model else ""
         return f"{prefix}Agent: {agent_id or stage_id}{model_text}"
     if event == "command.start":
         return f"{prefix}Command: {command or stage_id}"
     if event == "stage.retry":
-        return f"{prefix}Retrying after {stage_id} -> {next_stage}{retry_text}"
+        return f"{prefix}Retry: {stage_id} -> {next_stage}{retry_text}"
     if event in {"stage.finish", "task.finish"} and status:
         target = f"Stage: {stage_id}" if event == "stage.finish" and stage_id else "Task"
-        return f"{prefix}{target} {status}"
+        reason = str(fields.get("reason", "") or "")
+        reason_text = f" | {reason}" if reason and status not in {"pass", "complete"} else ""
+        return f"{prefix}{target}: {status}{reason_text}"
     if event.endswith(".start"):
         return f"{prefix}{message}"
     return None

@@ -93,6 +93,10 @@ class AgentExecutorTests(unittest.TestCase):
 
         self.assertIn("Use only paths under these project-relative targets: `story/chapters`.", prompt)
         self.assertIn("This is the drafting stage", prompt)
+        self.assertIn("FILE: story/chapters/chapter-001/scene-001.md", prompt)
+        self.assertIn("---CONTENT---", prompt)
+        self.assertIn("---END---", prompt)
+        self.assertIn("Do not use markdown code fences", prompt)
 
     def test_command_agent_writes_output_and_returns_pass(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

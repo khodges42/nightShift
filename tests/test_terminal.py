@@ -12,6 +12,7 @@ from nightshift.terminal import (
     animation_frames,
     format_banner,
     format_console_event_line,
+    format_status_bar_message,
     should_animate,
 )
 
@@ -46,6 +47,16 @@ class TerminalStylingTests(unittest.TestCase):
 
         self.assertEqual(stream.getvalue(), "")
 
+    def test_terminal_animation_emit_prints_for_non_tty(self) -> None:
+        stream = StringIO()
+        output = StringIO()
+        animation = TerminalAnimation(stream=stream)
+
+        with patch("sys.stdout", output):
+            animation.emit("plain log")
+
+        self.assertEqual(output.getvalue().strip(), "plain log")
+
     def test_terminal_animation_renders_immediately_when_started(self) -> None:
         stream = FakeTTY()
         animation = TerminalAnimation(
@@ -60,6 +71,31 @@ class TerminalStylingTests(unittest.TestCase):
         animation.stop()
 
         self.assertIn("[.  ] | Starting", output)
+
+    def test_terminal_animation_emit_clears_and_redraws_status(self) -> None:
+        stream = FakeTTY()
+        animation = TerminalAnimation(
+            name="status_dots",
+            message="Stage: plan",
+            stream=stream,
+            interval_seconds=60,
+        )
+
+        output = StringIO()
+        with patch("sys.stdout", output):
+            animation.start()
+            animation.emit("log line")
+            stream_output = stream.getvalue()
+            animation.stop()
+
+        self.assertIn("log line", output.getvalue())
+        self.assertGreaterEqual(stream_output.count("Stage: plan"), 2)
+
+    def test_format_status_bar_message_uses_status_color(self) -> None:
+        line = format_status_bar_message("Task done", status="complete", stream=FakeTTY())
+
+        self.assertIn("\x1b[32m", line)
+        self.assertIn("[NightShift COMPLETE]", line)
 
     def test_terminal_animation_does_not_depend_on_color_output(self) -> None:
         stream = FakeTTY()
@@ -83,6 +119,8 @@ class TerminalStylingTests(unittest.TestCase):
         )
         self.assertIn("\x1b[32m", success)
         self.assertIn("\x1b[31m", failure)
+        self.assertIn("DONE ", success)
+        self.assertIn("FAIL ", failure)
         self.assertTrue(success.endswith("\x1b[0m"))
         self.assertTrue(failure.endswith("\x1b[0m"))
 
@@ -130,7 +168,7 @@ class TerminalStylingTests(unittest.TestCase):
                 model="qwen3-coder:30b",
             )
 
-            self.assertEqual(statuses[0], "Task: TASK-001 | Stage: implement (file_writer) retry 2")
+            self.assertEqual(statuses[0], "Task: TASK-001 | >> Stage: implement (file_writer) retry 2")
             self.assertEqual(statuses[1], "Task: TASK-001 | Agent: implementer | Model: qwen3-coder:30b")
 
     def test_format_status_event_message_reports_retries(self) -> None:
@@ -145,7 +183,7 @@ class TerminalStylingTests(unittest.TestCase):
             },
         )
 
-        self.assertEqual(message, "Task: TASK-001 | Retrying after test -> implement retry 1")
+        self.assertEqual(message, "Task: TASK-001 | Retry: test -> implement retry 1")
 
 
 if __name__ == "__main__":

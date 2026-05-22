@@ -247,6 +247,19 @@ test
             self.assertIn("new file mode 100644", patch)
             self.assertEqual(result.files, ("src/app.py", "src/test_app.py"))
 
+    def test_file_updates_parse_explicit_delimiters(self) -> None:
+        updates = parse_file_updates(
+            """FILE: story/chapters/chapter-001/scene-001.md
+---CONTENT---
+Sunlight did not belong here.
+---END---
+"""
+        )
+
+        self.assertEqual(len(updates), 1)
+        self.assertEqual(updates[0].path, "story/chapters/chapter-001/scene-001.md")
+        self.assertEqual(updates[0].content, "Sunlight did not belong here.\n")
+
     def test_file_updates_reject_duplicate_blocks(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
