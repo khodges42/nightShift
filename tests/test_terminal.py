@@ -57,6 +57,17 @@ class TerminalStylingTests(unittest.TestCase):
 
         self.assertEqual(output.getvalue().strip(), "plain log")
 
+    def test_terminal_animation_status_update_prints_for_non_tty(self) -> None:
+        stream = StringIO()
+        output = StringIO()
+        animation = TerminalAnimation(stream=stream)
+
+        with patch("sys.stdout", output):
+            animation.update_message("Task: TASK-001 | >> Stage: plan")
+
+        self.assertIn("[NightShift]", output.getvalue())
+        self.assertIn("Stage: plan", output.getvalue())
+
     def test_terminal_animation_renders_immediately_when_started(self) -> None:
         stream = FakeTTY()
         animation = TerminalAnimation(
@@ -85,10 +96,12 @@ class TerminalStylingTests(unittest.TestCase):
         with patch("sys.stdout", output):
             animation.start()
             animation.emit("log line")
+            animation.update_message("Stage: write")
             stream_output = stream.getvalue()
             animation.stop()
 
         self.assertIn("log line", output.getvalue())
+        self.assertIn("Stage: write", output.getvalue())
         self.assertGreaterEqual(stream_output.count("Stage: plan"), 2)
 
     def test_format_status_bar_message_uses_status_color(self) -> None:

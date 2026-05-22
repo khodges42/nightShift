@@ -15,6 +15,7 @@ from .integ_setup import format_setup_result, setup_python_project
 from .integ_test import format_integration_test_result, run_integration_test
 from .pipeline import PipelineRunner
 from .runlog import RunLogger
+from .sandbox_run import format_sandbox_run_result, run_sandbox_project
 from .status import build_status, format_status
 from .task_tests import check_task_test_files, format_task_test_checks, missing_task_test_paths
 from .terminal import HOTDOG_ANIMATIONS, TerminalAnimation, format_banner, style_text
@@ -130,6 +131,38 @@ def build_parser() -> argparse.ArgumentParser:
     )
     integ_test_parser.add_argument("--setup-skip-validate", action="store_true", help="Skip validation during setup.")
     integ_test_parser.add_argument("--dry-run", action="store_true", help="Print commands without running setup or tasks.")
+
+    sandbox_parser = subparsers.add_parser(
+        "sandbox-run",
+        help="Copy an existing NightShift project into a sandbox, set it up, and run it.",
+    )
+    sandbox_parser.add_argument("--project", required=True, help="Existing NightShift project directory to copy.")
+    sandbox_output = sandbox_parser.add_mutually_exclusive_group(required=True)
+    sandbox_output.add_argument("--output", help="Sandbox output directory. The project is copied to OUTPUT/project.")
+    sandbox_output.add_argument(
+        "--timestamped",
+        action="store_true",
+        help="Create a timestamped sandbox under ROOT/integ_runs, like integ-test.",
+    )
+    sandbox_parser.add_argument("--root", default=".", help="Root used with --timestamped. Defaults to current directory.")
+    sandbox_parser.add_argument("--task", help="Specific task id to run.")
+    sandbox_parser.add_argument("--all", action="store_true", help="Run all runnable incomplete tasks.")
+    sandbox_parser.add_argument("--force", action="store_true", help="Overwrite an existing OUTPUT/project copy.")
+    sandbox_parser.add_argument(
+        "--setup-extra",
+        action="append",
+        default=["pytest"],
+        help="Extra package to install during setup. May be repeated. Defaults to pytest.",
+    )
+    sandbox_parser.add_argument("--setup-skip-validate", action="store_true", help="Skip validation during setup.")
+    sandbox_parser.add_argument("--dry-run", action="store_true", help="Create the sandbox copy and print commands without running setup or tasks.")
+    sandbox_parser.add_argument(
+        "--animation",
+        default="status_dots",
+        choices=tuple(sorted(HOTDOG_ANIMATIONS)),
+        help="Terminal animation to show while the sandboxed run is active.",
+    )
+    sandbox_parser.add_argument("--no-animation", action="store_true", help="Disable terminal animation.")
 
     integ_report_parser = subparsers.add_parser("integ-report", help="Summarize the latest integration run.")
     integ_report_parser.add_argument("--root", default=".", help="Repository root where integ_runs/ is located.")
@@ -307,6 +340,24 @@ def main(argv: list[str] | None = None) -> int:
                 dry_run=args.dry_run,
             )
             print(format_integration_test_result(result))
+            return result.exit_code
+
+        if args.command == "sandbox-run":
+            result = run_sandbox_project(
+                args.project,
+                output=args.output,
+                timestamped=args.timestamped,
+                root=args.root,
+                task=args.task,
+                all_tasks=args.all,
+                setup_extras=tuple(args.setup_extra or ()),
+                skip_setup_validate=args.setup_skip_validate,
+                dry_run=args.dry_run,
+                animation=args.animation,
+                no_animation=args.no_animation,
+                force=args.force,
+            )
+            print(format_sandbox_run_result(result))
             return result.exit_code
 
         if args.command == "integ-report":

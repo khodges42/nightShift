@@ -153,6 +153,93 @@ class PipelineRunnerTests(unittest.TestCase):
             self.assertIn("Retry limit reached", result.reason)
             self.assertEqual([item.stage_id for item in result.stage_results], ["implement", "review", "implement", "review", "implement", "review"])
 
+    def test_malformed_review_gets_strict_retry_without_redrafting(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            (root / "fake_reviewer.py").write_text(
+                "\n".join(
+                    [
+                        "import sys",
+                        "prompt = sys.stdin.read()",
+                        "if 'Previous review output was malformed' in prompt:",
+                        "    print('status: pass')",
+                        "    print('reason: strict retry ok')",
+                        "    print('next_stage: none')",
+                        "    print('context_update: none')",
+                        "else:",
+                        "    print('files')",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            stages = (
+                StageConfig(id="implement", type="agent", agent="planner", output="implementation-log.md"),
+                StageConfig(
+                    id="review",
+                    type="agent_review",
+                    agent="reviewer",
+                    on_fail="implement",
+                    output="review.md",
+                ),
+                StageConfig(id="summarize", type="summarize", output="final-notes.md"),
+            )
+            config = make_config(root, stages, max_retries=2)
+            config.agents["reviewer"] = AgentConfig(
+                id="reviewer",
+                backend="command",
+                command="python fake_reviewer.py",
+                system_prompt=Path("reviewer.md"),
+            )
+            runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+            task = parse_tasks(TASK_MD)[0]
+
+            result = runner.run_task(task)
+
+            task_dir = root / ".nightshift" / "runs" / "test-run" / "tasks" / task.id
+            self.assertEqual(result.status, "complete")
+            self.assertEqual(result.retry_count, 0)
+            self.assertEqual([item.stage_id for item in result.stage_results], ["implement", "review", "summarize"])
+            self.assertTrue((task_dir / "review.md").exists())
+            self.assertTrue((task_dir / "review-1.md").exists())
+            self.assertIn("files", (task_dir / "review.md").read_text(encoding="utf-8"))
+            self.assertIn("strict retry ok", (task_dir / "review-1.md").read_text(encoding="utf-8"))
+
+    def test_malformed_review_stops_without_on_fail_redraft(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            (root / "fake_reviewer.py").write_text("print('files')\n", encoding="utf-8")
+            stages = (
+                StageConfig(id="implement", type="agent", agent="planner", output="implementation-log.md"),
+                StageConfig(
+                    id="review",
+                    type="agent_review",
+                    agent="reviewer",
+                    on_fail="implement",
+                    output="review.md",
+                ),
+            )
+            config = make_config(root, stages, max_retries=2)
+            config.agents["reviewer"] = AgentConfig(
+                id="reviewer",
+                backend="command",
+                command="python fake_reviewer.py",
+                system_prompt=Path("reviewer.md"),
+            )
+            runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+            task = parse_tasks(TASK_MD)[0]
+
+            result = runner.run_task(task)
+
+            task_dir = root / ".nightshift" / "runs" / "test-run" / "tasks" / task.id
+            self.assertEqual(result.status, "failed")
+            self.assertEqual(result.retry_count, 0)
+            self.assertIn("remained malformed", result.reason)
+            self.assertEqual([item.stage_id for item in result.stage_results], ["implement", "review"])
+            self.assertTrue((task_dir / "review.md").exists())
+            self.assertTrue((task_dir / "review-1.md").exists())
+
     def test_passing_review_next_stage_is_ignored(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

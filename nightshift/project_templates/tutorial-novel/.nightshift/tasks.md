@@ -109,11 +109,101 @@ Acceptance Criteria:
 - Updates durable state
 
 ---
+- [ ] SCENE-031: Rollerblade courier run
+
+Dependencies:
+- SCENE-003
+
+Description:
+Proxy and Cricket rollerblade through late-night Seattle delivering encrypted NightShift inference keys, salvaged hardware, and cached datasets between squatters, artists, and underground operators.
+
+The scene should establish:
+- movement through the city
+- underground mutual aid systems
+- degraded urban infrastructure
+- physical geography of Seattle
+- emotional intimacy through transit
+
+Environmental details should emphasize:
+- wet pavement reflecting neon transit signage
+- abandoned autonomous delivery vehicles
+- late-night teriyaki shops
+- extension cords hanging between apartments
+- cracked sidewalks
+- rooftop antennas
+- stale vape clouds in freight elevators
+
+A subtle anomaly appears when an unrelated ad display briefly shows imagery identical to visuals seen elsewhere in the story.
+
+Nobody reacts strongly.
+
+Acceptance Criteria:
+- Strong Seattle atmosphere
+- Deepens Proxy and Cricket relationship naturally
+- Includes rollerblading materially throughout the scene
+- Introduces subtle recurring anomaly
+- Avoids exposition-heavy dialogue
+- Scene length between 1400-2400 words
+- Writes:
+  - `story/chapters/chapter-001/scene-003a.md`
+- Updates durable state
+
+---
+- [ ] SCENE-032: Kremwerk furry rave
+
+Dependencies:
+- SCENE-031
+
+Description:
+Proxy and DJ BLOODMONEY attend a crowded underground furry rave at Kremwerk following one of BLOODMONEY's pirate jungle sets.
+
+The scene should establish:
+- queer underground culture
+- synthetic identity experimentation
+- emotional sincerity beneath irony
+- anti-corporate creative spaces
+- generated aesthetics used communally rather than commercially
+- shape of the romance between Proxy and BLOODMONEY
+- makeout scene between proxy and bloodmoney
+
+The rave should feel:
+- affectionate
+- overheated
+- crowded
+- emotionally necessary
+
+Environmental details should include:
+- soaked Capitol Hill sidewalks
+- damp faux fur
+- dangling extension cords powering chargers
+- jungle edits mixed with bassline and hyperpop
+- generated visuals projected onto concrete pillars
+- patched jackets with dead startup logos
+- kandi bracelets
+- old server racks repurposed into lighting rigs
+- rollerbladers moving through industrial hallways
+- people discussing models like music genres
+
+Proxy gradually realizes many attendees rely emotionally on systems like NightShift.
+
+Acceptance Criteria:
+- Avoids mocking underground/furry culture
+- Strong sensory environmental detail
+- Reinforces themes of synthetic companionship and community
+- Includes subtle emotional unease beneath warmth
+- Maintains grounded tone
+- Scene length between 1800-3000 words
+- Writes:
+  - `story/chapters/chapter-001/scene-003b.md`
+- Updates durable state
+
+---
+
 
 - [ ] SCENE-004: Rich district delivery
 
 Dependencies:
-- SCENE-003
+- SCENE-032
 
 Description:
 Proxy delivers salvaged compute hardware to a wealthy private social club operating in a quiet offline district.
@@ -233,7 +323,7 @@ Proxy becomes uncomfortable with:
 
 Acceptance Criteria:
 - Shows expanding underground compute economy
-- Deepens Proxy’s internal conflict
+- Deepens Proxy's internal conflict
 - Introduces operational stress
 - Maintains grounded tone
 - Writes:
@@ -241,11 +331,51 @@ Acceptance Criteria:
 - Updates durable state
 
 ---
+- [ ] SCENE-081: Free inference night
+
+Dependencies:
+- SCENE-008
+
+Description:
+Following a successful scavenging run, NightShift temporarily opens free public inference access for one evening.
+
+Artists, musicians, lonely users, and exhausted workers flood the squat looking for compute access.
+
+The scene should establish:
+- NightShift as emotional infrastructure
+- positive social uses of synthetic systems
+- underground mutual aid culture
+- growing operational stress
+
+Examples should include:
+- collaborative generated visuals
+- musicians creating samples
+- users generating outfit concepts before events
+- emotionally vulnerable conversations with companion systems
+- translation of old documents and messages
+- communal experimentation with weird model outputs
+
+Proxy slowly realizes NightShift has become psychologically essential for many people.
+
+This realization unsettles her.
+
+Acceptance Criteria:
+- Avoids simplistic "AI bad" framing
+- Balances warmth with discomfort
+- Strong environmental detail
+- Shows growing scale of NightShift operations
+- Reinforces emotional dependency themes
+- Scene length between 1800-3000 words
+- Writes:
+  - `story/chapters/chapter-002/scene-002a.md`
+- Updates durable state
+
+---
 
 - [ ] SCENE-009: Sister Circuit
 
 Dependencies:
-- SCENE-008
+- SCENE-081
 
 Description:
 Proxy meets Sister Circuit in a server monastery outside Tacoma.

@@ -229,7 +229,11 @@ class PipelineRunner:
                 index += 1
                 continue
 
-            target_stage = stage.on_fail or result.next_stage
+            target_stage = result.next_stage or (
+                stage.on_fail
+                if not (stage.type in {"agent_review", "review"} and _is_malformed_review_result(result))
+                else None
+            )
             analysis_note = self._write_failure_diagnostics(stage, task, result, retry_count)
             if analysis_note:
                 retry_notes.append(analysis_note)
@@ -481,7 +485,7 @@ class PipelineRunner:
             result = self.agent_executor.run_stage(
                 self._stage_for_retry_agent(stage, retry_count),
                 task,
-                previous_outputs,
+                _review_previous_outputs(previous_outputs) if stage.type in {"agent_review", "review"} else previous_outputs,
                 retry_notes,
                 project_context=context.project_context,
                 task_context=context.task_context,
@@ -500,6 +504,17 @@ class PipelineRunner:
                     context.project_context,
                     context.task_context,
                     context.retry_context,
+                )
+            if stage.type in {"agent_review", "review"} and _is_malformed_review_result(result):
+                return self._rerun_malformed_review(
+                    stage,
+                    task,
+                    result,
+                    previous_outputs,
+                    retry_notes,
+                    retry_count,
+                    context.project_context,
+                    context.task_context,
                 )
             return result
         if stage.type in COMMAND_STAGE_TYPES:
@@ -1217,6 +1232,59 @@ class PipelineRunner:
         )
         return f"Debugger output: {debug_result.output_path or 'none'}."
 
+    def _rerun_malformed_review(
+        self,
+        stage: StageConfig,
+        task: Task,
+        malformed_result: StageResult,
+        previous_outputs: dict[str, str],
+        retry_notes: list[str],
+        retry_count: int,
+        project_context: str,
+        task_context: str,
+    ) -> StageResult:
+        output_name = _attempt_filename(stage.output or f"{stage.id}.md", retry_count + 1)
+        strict_stage = replace(
+            self._stage_for_retry_agent(stage, retry_count),
+            output=output_name,
+        )
+        self.logger.event(
+            "agent.rerun",
+            "Re-running review after malformed output",
+            stage_id=stage.id,
+            task_id=task.id,
+        )
+        strict_notes = [
+            *retry_notes,
+            "Previous review output was malformed. Return exactly four lines: status, reason, next_stage, context_update. Do not return prose, headings, or analysis.",
+        ]
+        strict_outputs = _review_previous_outputs(previous_outputs)
+        strict_outputs["malformed_review_output"] = _compact_previous_output(
+            self._read_output(malformed_result.output_path),
+            max_chars=800,
+        )
+        result = self.agent_executor.run_stage(
+            strict_stage,
+            task,
+            strict_outputs,
+            strict_notes,
+            project_context=project_context,
+            task_context=task_context,
+            retry_context="\n".join(f"- {note}" for note in strict_notes),
+        )
+        if _is_malformed_review_result(result):
+            return StageResult(
+                result.stage_id,
+                "fail",
+                (
+                    "Review output remained malformed after a strict formatting retry. "
+                    "Stopping without redrafting; inspect the applied draft and review artifact."
+                ),
+                output_path=result.output_path,
+                context_update=result.context_update,
+            )
+        return result
+
     def _modified_files(self) -> tuple[str, ...]:
         completed = subprocess.run(
             ["git", "status", "--short"],
@@ -1606,6 +1674,36 @@ def _invalid_file_writer_output_summary(output: str, reason: str, max_chars: int
             excerpt = excerpt[:max_chars].rstrip() + "\n... <truncated>"
         lines.extend(["", "Excerpt:", "```text", excerpt, "```"])
     return "\n".join(lines)
+
+
+def _is_malformed_review_result(result: StageResult) -> bool:
+    return result.status == "fail" and (
+        "Review output did not include a valid status" in result.reason
+        or "Review output remained malformed" in result.reason
+    )
+
+
+def _review_previous_outputs(previous_outputs: dict[str, str], max_chars: int = 1600) -> dict[str, str]:
+    compacted: dict[str, str] = {}
+    priority_names = {
+        "applied.patch",
+        "normalized-draft.patch",
+        "scene-draft.patch",
+        "draft_scene",
+        "apply_draft",
+        "validate_draft",
+        "test",
+        "review",
+    }
+    for name, output in previous_outputs.items():
+        if name in priority_names or name.endswith(".patch") or "draft" in name or "apply" in name:
+            compacted[name] = _compact_previous_output(output, max_chars=max_chars)
+            continue
+        if name in {"plan", "semantic_context", "context"}:
+            compacted[name] = _compact_previous_output(output, max_chars=500)
+            continue
+        compacted[name] = _compact_previous_output(output, max_chars=800)
+    return compacted
 
 
 def _file_writer_error_reason(stage: StageConfig, reason: str) -> str:

@@ -168,6 +168,7 @@ class TerminalAnimation:
         self._width = 0
         self._lock = threading.Lock()
         self._last_rendered = ""
+        self._last_status_line = ""
 
     def __enter__(self) -> "TerminalAnimation":
         self.start()
@@ -194,6 +195,7 @@ class TerminalAnimation:
     def update_message(self, message: str) -> None:
         with self._lock:
             self.message = message
+        self._emit_status_line(message)
 
     def emit(self, line: str) -> None:
         if not self.enabled:
@@ -237,6 +239,18 @@ class TerminalAnimation:
             return
         self.stream.write("\r" + (" " * self._width) + "\r")
         self.stream.flush()
+
+    def _emit_status_line(self, message: str) -> None:
+        line = format_status_bar_message(message, stream=self.stream)
+        if line == self._last_status_line:
+            return
+        self._last_status_line = line
+        if self.enabled:
+            self._clear()
+            print(line)
+            self._render_frame(0)
+            return
+        print(line)
 
 
 def animation_frames(name: str) -> tuple[str, ...]:
