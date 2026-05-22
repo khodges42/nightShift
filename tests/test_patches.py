@@ -269,6 +269,34 @@ two
             with self.assertRaisesRegex(PipelineError, "duplicate file block"):
                 generate_patch_from_file_updates(updates, root, safety)
 
+    def test_file_updates_enforce_stage_allowed_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "story" / "chapters").mkdir(parents=True)
+            safety = SafetyConfig(
+                require_clean_worktree=False,
+                scoped_paths=("story",),
+                allowed_commands=(),
+                forbidden_commands=(),
+            )
+            updates = parse_file_updates(
+                """```file:story/chapters/scene.md
+scene
+```
+```file:story/plot-state.md
+state
+```
+"""
+            )
+
+            with self.assertRaisesRegex(PipelineError, "not allowed for this stage"):
+                generate_patch_from_file_updates(
+                    updates,
+                    root,
+                    safety,
+                    allowed_paths=("story/chapters",),
+                )
+
     def test_file_updates_allow_identical_duplicate_blocks(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

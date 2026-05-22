@@ -35,6 +35,83 @@ Deterministic checks:
 
 Then optional model reviewer checks acceptance-criteria alignment.
 
+## P0: Preserve Good Drafts During Repair
+
+When a generated file block contains useful allowed content plus disallowed or invalid extra content, avoid redrafting from scratch.
+
+Possible behavior:
+
+- keep the allowed candidate file artifact
+- strip disallowed file blocks only when configured as safe for that stage
+- continue with validation for the allowed content
+- or ask the model for a minimal correction that preserves the accepted candidate
+
+For writing workflows, preserving a good scene is more valuable than forcing a full retry.
+
+## P0: Remove Runtime Overrides For Custom Ollama Models
+
+If a model is a tuned local Ollama model such as `nightshift-writer` or `nightshift-base`, prefer the Modelfile parameters unless the stage has a specific reason to override them.
+
+Candidate config cleanup:
+
+- remove `temperature`
+- remove `num_ctx`
+- remove `num_predict`
+- remove `stop` if present
+
+This avoids NightShift accidentally overriding tuned custom-model behavior.
+
+## P1: Improve `what-happened` For Model Runs
+
+The report should identify usable intermediate work, not only final failure state.
+
+Examples:
+
+- model produced a valid scene candidate
+- validation rejected extra state files
+- recover candidate from `candidate-files/<stage>/index.md`
+- retry output was invalid or too short
+- next recommended action
+
+This should make failed creative-writing runs reviewable without manually reading every artifact.
+
+## P1: Add Stage-Specific Task Views
+
+The same task may say both "write scene" and "update state", but those responsibilities belong to different stages.
+
+Stage prompts should receive a filtered task view:
+
+- drafter sees only scene-writing criteria
+- state updater sees only durable state update criteria
+- reviewers see criteria relevant to their review role
+
+This reduces prompt contradiction and makes deterministic stage rules easier for models to follow.
+
+## P1: Preserve Intra-Attempt Rerun Artifacts
+
+When NightShift re-runs an agent inside the same stage attempt, do not overwrite the previous artifact.
+
+Examples:
+
+- `draft_scene-agent-output.md`
+- `draft_scene-agent-output-invalid-rerun-1.md`
+- `draft_scene-agent-output-1.md`
+
+This keeps the initial useful output visible even when strict rerun output is worse.
+
+## P1: Add A Writing-Mode Validator
+
+Add deterministic checks for prose workflows:
+
+- scene file exists at requested path
+- scene word count is within configured range
+- drafter did not touch state files
+- state updater did not touch chapter prose
+- no TODOs, author notes, or bracket placeholders
+- optional checks for repeated headings or accidental prompt leakage
+
+This should run before model review stages.
+
 ## P2: Add A Test Analyzer Agent For TDD
 
 Defer until generated tests are stable.

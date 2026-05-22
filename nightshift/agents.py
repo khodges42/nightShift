@@ -519,8 +519,24 @@ def output_contract_for(stage: StageConfig) -> str:
 def _format_allowed_file_writer_paths(allowed_paths: tuple[str, ...]) -> str:
     if not allowed_paths:
         return "Use real project-relative paths, not placeholder paths."
+    normalized = tuple(path.replace("\\", "/").rstrip("/") for path in allowed_paths)
     paths = ", ".join(f"`{path}`" for path in allowed_paths)
-    return f"Use only paths under these project-relative targets: {paths}."
+    guidance = f"Use only paths under these project-relative targets: {paths}."
+    if normalized == ("story/chapters",):
+        return (
+            guidance
+            + " This is the drafting stage: write only scene prose; do not update plot state, "
+            "characters, timeline, unresolved threads, or other story state files."
+        )
+    state_paths = {
+        "story/plot-state.md",
+        "story/characters.md",
+        "story/timeline.md",
+        "story/unresolved-threads.md",
+    }
+    if set(normalized).issubset(state_paths):
+        return guidance + " This is the state update stage: do not write or rewrite chapter prose."
+    return guidance
 
 
 def parse_review_output(output: str) -> tuple[StageStatus, str, str | None, str | None]:

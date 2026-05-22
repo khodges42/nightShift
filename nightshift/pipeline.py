@@ -22,6 +22,7 @@ from .patches import (
     DEFAULT_FORBIDDEN_PATHS,
     DEFAULT_MAX_CHANGED_LINES,
     DEFAULT_MAX_FILES,
+    FileUpdate,
     apply_patch_with_git,
     extract_unified_diff,
     format_patch_apply_result,
@@ -693,7 +694,7 @@ class PipelineRunner:
     ) -> StageResult:
         if stage.agent is None:
             raise PipelineError(f"Pipeline error: file_writer stage '{stage.id}' must reference an agent.")
-        enriched_outputs = dict(previous_outputs)
+        enriched_outputs = _file_writer_previous_outputs(previous_outputs, retry_count)
         context_pack_path = self._latest_task_artifact(task.id, "context-pack.md")
         if context_pack_path is not None:
             enriched_outputs["context-pack.md"] = context_pack_path.read_text(encoding="utf-8", errors="replace")
@@ -745,19 +746,28 @@ class PipelineRunner:
             raw_output = self._read_output(result.output_path)
             stdout = extract_agent_stdout(raw_output)
         invalid_rerun_done = False
+        candidate_index_path: Path | None = None
         while True:
             try:
                 updates = parse_file_updates(stdout)
+                candidate_index_path = self._write_file_writer_candidates(
+                    task.id,
+                    stage,
+                    updates,
+                    retry_count,
+                )
                 patch = generate_patch_from_file_updates(
                     updates,
                     self.config.project.root,
                     self.config.safety,
+                    allowed_paths=stage.allowed_paths,
                     forbidden_paths=stage.forbidden_paths or DEFAULT_FORBIDDEN_PATHS,
                 )
                 patch_reason = "Deterministic patch written from file blocks."
                 log_message = "Wrote deterministic patch from file blocks"
                 break
             except PipelineError as exc:
+                reason = _file_writer_error_reason(stage, str(exc))
                 if (
                     "no file blocks found" in str(exc)
                     and "diff --git " not in stdout
@@ -773,7 +783,7 @@ class PipelineRunner:
                     rerun_outputs = dict(enriched_outputs)
                     rerun_outputs["invalid_file_writer_output_summary"] = _invalid_file_writer_output_summary(
                         stdout,
-                        str(exc),
+                        reason,
                     )
                     strict_notes = [
                         *retry_notes,
@@ -796,7 +806,6 @@ class PipelineRunner:
                     patch = normalize_patch_text(stdout)
                 except PipelineError:
                     summary_filename = _writer_summary_filename(stage, retry_count)
-                    reason = str(exc)
                     if "generated patch has no changes" in reason:
                         next_stage = self._stage_after_patch_flow(stage.id)
                         reason = self._no_changes_reason(retry_count)
@@ -836,6 +845,11 @@ class PipelineRunner:
                 proposed_path.relative_to(self.config.project.root).as_posix(),
                 retry_count=retry_count,
                 retry_notes=retry_notes,
+                candidate_index_path=(
+                    candidate_index_path.relative_to(self.config.project.root).as_posix()
+                    if candidate_index_path
+                    else None
+                ),
             ),
         )
         self.logger.event(
@@ -852,6 +866,47 @@ class PipelineRunner:
             output_path=str(proposed_path.relative_to(self.config.project.root)),
             context_update=f"Implementation summary: {summary_path.relative_to(self.config.project.root).as_posix()}",
         )
+
+    def _write_file_writer_candidates(
+        self,
+        task_id: str,
+        stage: StageConfig,
+        updates: tuple[FileUpdate, ...],
+        retry_count: int,
+    ) -> Path:
+        if not updates:
+            raise PipelineError("File writer error: no candidate file blocks found.")
+        base = f"candidate-files/{stage.id}"
+        if retry_count:
+            base += f"-retry-{retry_count}"
+        lines = [
+            "# Candidate Files",
+            "",
+            f"Stage: `{stage.id}`",
+            f"Retry: {retry_count}",
+            "",
+            "These are raw file blocks extracted before patch validation or apply.",
+            "",
+            "## Files",
+            "",
+        ]
+        seen: set[str] = set()
+        for index, update in enumerate(updates, start=1):
+            filename = f"{index:03d}-{_candidate_artifact_name(update.path)}"
+            while filename in seen:
+                filename = f"{index:03d}-{len(seen):03d}-{_candidate_artifact_name(update.path)}"
+            seen.add(filename)
+            artifact_name = f"{base}/{filename}"
+            artifact_path = self.artifacts.write_stage_output(task_id, artifact_name, update.content)
+            relative = artifact_path.relative_to(self.config.project.root).as_posix()
+            lines.extend(
+                [
+                    f"- Source path: `{update.path}`",
+                    f"  Artifact: `{relative}`",
+                ]
+            )
+        lines.append("")
+        return self.artifacts.write_stage_output(task_id, f"{base}/index.md", "\n".join(lines))
 
     def _writer_agent_stage(self, stage: StageConfig, retry_count: int) -> StageConfig:
         suffix = f"-{retry_count}" if retry_count else ""
@@ -1426,6 +1481,7 @@ def format_implementation_summary(
     patch_path: str,
     retry_count: int = 0,
     retry_notes: list[str] | None = None,
+    candidate_index_path: str | None = None,
 ) -> str:
     notes = retry_notes or []
     lines = [
@@ -1435,6 +1491,7 @@ def format_implementation_summary(
         "Status: pass",
         f"Repair attempt: {retry_count}",
         f"Patch: `{patch_path}`",
+        f"Candidate files: `{candidate_index_path}`" if candidate_index_path else "Candidate files: <none>",
         "",
         "## Retry Feedback",
         "",
@@ -1549,6 +1606,68 @@ def _invalid_file_writer_output_summary(output: str, reason: str, max_chars: int
             excerpt = excerpt[:max_chars].rstrip() + "\n... <truncated>"
         lines.extend(["", "Excerpt:", "```text", excerpt, "```"])
     return "\n".join(lines)
+
+
+def _file_writer_error_reason(stage: StageConfig, reason: str) -> str:
+    guidance = _file_writer_stage_guidance(stage)
+    if not guidance or "not allowed for this stage" not in reason:
+        return reason
+    return f"{reason} {guidance}"
+
+
+def _file_writer_stage_guidance(stage: StageConfig) -> str:
+    allowed = tuple(path.replace("\\", "/").rstrip("/") for path in stage.allowed_paths)
+    if allowed == ("story/chapters",):
+        return (
+            "This is the drafting stage: write only scene prose under `story/chapters/`. "
+            "Do not update plot state, characters, timeline, unresolved threads, or other story state files."
+        )
+    state_paths = {
+        "story/plot-state.md",
+        "story/characters.md",
+        "story/timeline.md",
+        "story/unresolved-threads.md",
+    }
+    if set(allowed).issubset(state_paths) and allowed:
+        return (
+            "This is the state update stage: update only durable story state files. "
+            "Do not rewrite scene prose or chapter files."
+        )
+    if allowed:
+        return "Return file blocks only for the allowed paths configured on this stage."
+    return ""
+
+
+def _candidate_artifact_name(path_text: str) -> str:
+    name = path_text.replace("\\", "/").strip().strip("/")
+    name = re.sub(r"[^A-Za-z0-9_.-]+", "_", name)
+    name = name.strip("._-")
+    return name or "candidate.txt"
+
+
+def _file_writer_previous_outputs(
+    previous_outputs: dict[str, str],
+    retry_count: int,
+    max_chars: int = 1200,
+) -> dict[str, str]:
+    if retry_count <= 0:
+        return dict(previous_outputs)
+    compacted: dict[str, str] = {}
+    for name, output in previous_outputs.items():
+        compacted[name] = _compact_previous_output(output, max_chars=max_chars)
+    return compacted
+
+
+def _compact_previous_output(output: str, max_chars: int = 1200) -> str:
+    if len(output) <= max_chars:
+        return output
+    head_chars = max_chars // 2
+    tail_chars = max_chars - head_chars
+    return (
+        output[:head_chars].rstrip()
+        + "\n\n... <previous output truncated for retry prompt> ...\n\n"
+        + output[-tail_chars:].lstrip()
+    )
 
 
 def _repeated_protected_path_violation(entries: tuple[RetryMemoryEntry, ...]) -> bool:

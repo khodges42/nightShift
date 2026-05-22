@@ -114,6 +114,7 @@ def generate_patch_from_file_updates(
     updates: tuple[FileUpdate, ...],
     project_root: str | Path,
     safety: SafetyConfig,
+    allowed_paths: tuple[str, ...] = (),
     forbidden_paths: tuple[str, ...] = DEFAULT_FORBIDDEN_PATHS,
 ) -> str:
     root = resolve_project_root(project_root)
@@ -128,6 +129,7 @@ def generate_patch_from_file_updates(
             raise PipelineError(f"File writer error: duplicate file block `{normalized_path}`.")
         seen[normalized_path] = update.content
         _validate_patch_path(normalized_path, root, scoped_roots, forbidden_paths)
+        _validate_allowed_patch_path(normalized_path, root, allowed_paths)
         file_path = resolve_inside_root(root, normalized_path, f"file update '{normalized_path}'")
         old_text = file_path.read_text(encoding="utf-8", errors="replace") if file_path.exists() else ""
         if old_text == update.content:

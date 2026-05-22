@@ -12,7 +12,7 @@ from nightshift.config import (
     SafetyConfig,
     StageConfig,
 )
-from nightshift.pipeline import PipelineRunner
+from nightshift.pipeline import PipelineRunner, _file_writer_previous_outputs
 from nightshift.stages import StageResult
 from nightshift.tasks import parse_tasks
 
@@ -589,6 +589,53 @@ Acceptance Criteria:
             self.assertTrue(agent_output.exists())
             self.assertIn("diff --git a/app.py b/app.py", patch.read_text(encoding="utf-8"))
             self.assertIn("diff --git a/tests/test_app.py b/tests/test_app.py", patch.read_text(encoding="utf-8"))
+            candidate_index = root / ".nightshift" / "runs" / "test-run" / "tasks" / "TASK-001" / "candidate-files" / "write" / "index.md"
+            self.assertTrue(candidate_index.exists())
+            self.assertIn("app.py", candidate_index.read_text(encoding="utf-8"))
+
+    def test_file_writer_preserves_candidates_when_stage_paths_reject_extra_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            (root / "story" / "chapters").mkdir(parents=True)
+            (root / "fake_writer.py").write_text(
+                "\n".join(
+                    [
+                        "print('```file:story/chapters/scene.md')",
+                        "print('scene prose')",
+                        "print('```')",
+                        "print('```file:story/plot-state.md')",
+                        "print('state')",
+                        "print('```')",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            stages = (
+                StageConfig(
+                    id="draft_scene",
+                    type="file_writer",
+                    agent="writer",
+                    allowed_paths=("story/chapters",),
+                ),
+            )
+            config = make_config(root, stages, max_retries=0)
+            config.agents["writer"] = AgentConfig(
+                id="writer",
+                backend="command",
+                command="python fake_writer.py",
+                system_prompt=Path("planner.md"),
+            )
+            runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+
+            result = runner.run_task(parse_tasks(TASK_MD)[0])
+
+            task_dir = root / ".nightshift" / "runs" / "test-run" / "tasks" / "TASK-001"
+            candidate = task_dir / "candidate-files" / "draft_scene" / "001-story_chapters_scene.md"
+            self.assertEqual(result.status, "failed")
+            self.assertIn("This is the drafting stage", result.reason)
+            self.assertTrue(candidate.exists())
+            self.assertEqual(candidate.read_text(encoding="utf-8"), "scene prose\n")
 
     def test_file_writer_accepts_unified_diff_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -757,6 +804,18 @@ Acceptance Criteria:
             self.assertIn("invalid_file_writer_output_summary", retry_prompt)
             self.assertIn("... <truncated>", retry_prompt)
             self.assertLess(len(retry_prompt), 9000)
+
+    def test_file_writer_retry_compacts_large_previous_outputs(self) -> None:
+        outputs = {
+            "scene-draft.patch": "a" * 5000,
+            "draft-validation.md": "Patch validation failed",
+        }
+
+        compacted = _file_writer_previous_outputs(outputs, retry_count=1, max_chars=100)
+
+        self.assertIn("previous output truncated", compacted["scene-draft.patch"])
+        self.assertLess(len(compacted["scene-draft.patch"]), 180)
+        self.assertEqual(compacted["draft-validation.md"], "Patch validation failed")
 
     def test_patch_validator_rejects_unsafe_patch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
