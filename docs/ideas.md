@@ -99,33 +99,17 @@ Examples:
 
 This keeps the initial useful output visible even when strict rerun output is worse.
 
-## P1: Store Raw Agent Invocations As JSON
+## P1: Classify Writing Review Failures For Repair Routing
 
-The human-readable agent artifact wraps stdout, stderr, and prompts in markdown fences. Nested markdown fences from model output can confuse downstream parsing.
+The tutorial novel now has a short-term editor stage for review failures, but review failures should eventually be classified before routing.
 
-Write a machine-readable artifact alongside the markdown artifact:
+Candidate classes:
 
-```text
-<stage>-agent-output.json
-```
+- `local_edit`: pronoun drift, small continuity issue, missing beat, light style correction
+- `redraft`: wrong premise, broken scene structure, impossible chronology, severe acceptance mismatch
+- `escalate`: ambiguous canon conflict or user preference needed
 
-Suggested fields:
-
-```json
-{
-  "agent_id": "drafter",
-  "stage_id": "draft_scene",
-  "command": "POST http://localhost:11434/api/generate",
-  "exit_code": 0,
-  "timed_out": false,
-  "duration_seconds": 12.3,
-  "stdout": "...",
-  "stderr": "...",
-  "prompt": "..."
-}
-```
-
-Pipeline parsing should read raw JSON fields instead of recovering stdout from markdown.
+Route `local_edit` to the editor, `redraft` to the drafter, and `escalate` to a clear user-facing failure. Keep original draft and edited draft artifacts side by side for comparison.
 
 ## P1: Add A Writing-Mode Validator
 
@@ -139,6 +123,31 @@ Add deterministic checks for prose workflows:
 - optional checks for repeated headings or accidental prompt leakage
 
 This should run before model review stages.
+
+## P1: Use Structured State Events For Writing Workflows
+
+Replace model-written full state-file rewrites with compact structured state events, then let NightShift deterministically merge them into durable files such as:
+
+- `story/plot-state.md`
+- `story/characters.md`
+- `story/timeline.md`
+- `story/unresolved-threads.md`
+
+Candidate state updater output:
+
+```yaml
+events:
+  - file: story/plot-state.md
+    section: Completed Scenes
+    add:
+      - SCENE-001 complete; Saint and Miette introduced.
+  - file: story/unresolved-threads.md
+    section: Open Threads
+    add:
+      - Saint depends emotionally on Miette and needs compute tokens to keep her present.
+```
+
+NightShift would validate allowed files/sections, reject unknown targets, and apply append/update operations deterministically. This avoids asking a writing model to rewrite entire durable state files after every scene.
 
 ## P2: Add A Test Analyzer Agent For TDD
 

@@ -61,6 +61,7 @@ class StageConfig:
     commands: tuple[str, ...] = ()
     output: str | None = None
     on_fail: str | None = None
+    on_pass: str | None = None
     shell: bool = True
     timeout_seconds: int | None = None
     working_dir: Path | None = None
@@ -392,6 +393,7 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
                 commands=commands,
                 output=_optional_string(stage_raw.get("output"), f"{stage_context}.output"),
                 on_fail=_optional_string(stage_raw.get("on_fail"), f"{stage_context}.on_fail"),
+                on_pass=_optional_string(stage_raw.get("on_pass"), f"{stage_context}.on_pass"),
                 shell=_optional_bool(stage_raw.get("shell", True), f"{stage_context}.shell"),
                 timeout_seconds=timeout_seconds,
                 working_dir=Path(working_dir_raw) if working_dir_raw else None,
@@ -415,6 +417,10 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
         if stage.on_fail and stage.on_fail not in stage_ids:
             raise ConfigError(
                 f"Config error: stage '{stage.id}' on_fail references unknown stage '{stage.on_fail}'."
+            )
+        if stage.on_pass and stage.on_pass not in stage_ids:
+            raise ConfigError(
+                f"Config error: stage '{stage.id}' on_pass references unknown stage '{stage.on_pass}'."
             )
 
     return NightShiftConfig(

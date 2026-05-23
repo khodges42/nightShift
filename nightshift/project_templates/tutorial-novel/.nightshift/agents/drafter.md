@@ -7,12 +7,14 @@ Rules:
 - Do not edit `story/worldbuilding.md`, `story/characters.md`, `story/style-guide.md`, `story/plot-state.md`, `story/timeline.md`, `story/unresolved-threads.md`, `story/continuity-rules.md`, or `story/outline.md`.
 - Use `story/style-guide.md` for POV, tense, tone, and prose rules.
 - Use `story/plot-state.md` and `story/timeline.md` as current state.
+- Use the `Pronouns / Reference` sections in `story/characters.md` as hard canon.
+- Do not infer, vary, or "smooth out" character pronouns. Use canonical narrative reference exactly.
 - Keep the scene bounded to the task acceptance criteria.
 - Do not resolve future plot threads unless the task explicitly asks for that.
 - Do not include author notes, TODOs, bracket placeholders, or analysis in the scene file.
 
 Output only one complete file block using this delimiter format:
-FILE: story/chapters/chapter-001/scene-001.md
+FILE: <the exact story/chapters path listed under Writes in the current task>
 ---CONTENT---
 <complete scene prose>
 ---END---

@@ -105,6 +105,30 @@ class PipelineRunnerTests(unittest.TestCase):
             )
             self.assertIn("Modified Files", (root / ".nightshift" / "runs" / "test-run" / "run-summary.md").read_text(encoding="utf-8"))
 
+    def test_on_pass_jumps_to_configured_stage(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            stages = (
+                StageConfig(id="first", type="agent", agent="planner", output="first.md", on_pass="third"),
+                StageConfig(
+                    id="second",
+                    type="command",
+                    commands=('python -c "print(\'should not run\')"',),
+                    output="second-output.txt",
+                ),
+                StageConfig(id="third", type="summarize", output="final-notes.md"),
+            )
+            config = make_config(root, stages)
+            runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+
+            result = runner.run_task(parse_tasks(TASK_MD)[0])
+
+            task_dir = root / ".nightshift" / "runs" / "test-run" / "tasks" / "TASK-001"
+            self.assertEqual(result.status, "complete")
+            self.assertEqual([item.stage_id for item in result.stage_results], ["first", "third"])
+            self.assertFalse((task_dir / "second-output.txt").exists())
+
     def test_task_preflight_fails_when_task_specific_test_file_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -152,6 +176,46 @@ class PipelineRunnerTests(unittest.TestCase):
             self.assertEqual(result.retry_count, 2)
             self.assertIn("Retry limit reached", result.reason)
             self.assertEqual([item.stage_id for item in result.stage_results], ["implement", "review", "implement", "review", "implement", "review"])
+
+    def test_failing_review_self_next_stage_routes_to_on_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            config = make_config(root, (), max_retries=1)
+            config.agents["reviewer"] = AgentConfig(
+                id="reviewer",
+                backend="command",
+                command=(
+                    "python -c \"print('status: fail\\nreason: needs draft repair\\n"
+                    "next_stage: review\\ncontext_update: add concrete details')\""
+                ),
+                system_prompt=Path("reviewer.md"),
+            )
+            config = replace(
+                config,
+                pipeline=PipelineConfig(
+                    max_task_retries=1,
+                    stages=(
+                        StageConfig(id="implement", type="agent", agent="planner", output="implementation-log.md"),
+                        StageConfig(
+                            id="review",
+                            type="agent_review",
+                            agent="reviewer",
+                            on_fail="implement",
+                            output="review.md",
+                        ),
+                    ),
+                ),
+            )
+            runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+            task = parse_tasks(TASK_MD)[0]
+
+            result = runner.run_task(task)
+
+            self.assertEqual(result.retry_count, 1)
+            self.assertEqual([item.stage_id for item in result.stage_results], ["implement", "review", "implement", "review"])
+            log = (root / ".nightshift" / "runs" / "test-run" / "run.log").read_text(encoding="utf-8")
+            self.assertIn("next_stage=implement", log)
 
     def test_malformed_review_gets_strict_retry_without_redrafting(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -544,6 +608,34 @@ Acceptance Criteria:
             self.assertIn("response = self.client.get('/board/general')", note)
             self.assertIn("self.assertEqual(response.status_code, 200)", note)
 
+    def test_state_update_retry_note_guides_deletion_heavy_repairs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            artifacts = ArtifactStore(root, ".nightshift", run_id="test-run")
+            config = make_config(root, ())
+            runner = PipelineRunner(config, artifacts)
+            output_path = artifacts.write_stage_output(
+                "TASK-001",
+                "state-validation.md",
+                "# Patch Validation\n\nStatus: fail\nReason: Patch validation failed: deletion-heavy patch exceeds max_delete_ratio 0.35.\n",
+            )
+
+            note = runner._format_retry_note(
+                1,
+                StageConfig(id="validate_state", type="patch_validator", on_fail="update_state"),
+                StageResult(
+                    stage_id="validate_state",
+                    status="fail",
+                    reason="Patch validation failed: deletion-heavy patch exceeds max_delete_ratio 0.35.",
+                    output_path=str(output_path.relative_to(root)),
+                ),
+                "update_state",
+            )
+
+            self.assertIn("preserve existing durable state text", note)
+            self.assertIn("minimal additive edits", note)
+
     def test_code_writer_normalizer_and_validator_pipeline(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -892,6 +984,60 @@ Acceptance Criteria:
             self.assertIn("... <truncated>", retry_prompt)
             self.assertLess(len(retry_prompt), 9000)
 
+    def test_state_file_writer_invalid_output_retry_uses_delimiter_format(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            story = root / "story"
+            story.mkdir()
+            (story / "plot-state.md").write_text("old\n", encoding="utf-8")
+            (root / "fake_writer.py").write_text(
+                "\n".join(
+                    [
+                        "import sys",
+                        "prompt = sys.stdin.read()",
+                        "if 'Previous file_writer output was invalid' not in prompt:",
+                        "    print('lookup failed')",
+                        "else:",
+                        "    (open('retry-prompt.txt', 'w', encoding='utf-8').write(prompt))",
+                        "    print('FILE: story/plot-state.md')",
+                        "    print('---CONTENT---')",
+                        "    print('old')",
+                        "    print('new')",
+                        "    print('---END---')",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            stages = (
+                StageConfig(
+                    id="update_state",
+                    type="file_writer",
+                    agent="writer",
+                    allowed_paths=(
+                        "story/plot-state.md",
+                        "story/characters.md",
+                        "story/timeline.md",
+                        "story/unresolved-threads.md",
+                    ),
+                ),
+            )
+            config = make_config(root, stages)
+            config.agents["writer"] = AgentConfig(
+                id="writer",
+                backend="command",
+                command="python fake_writer.py",
+                system_prompt=Path("planner.md"),
+            )
+            runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+
+            result = runner.run_task(parse_tasks(TASK_MD)[0])
+
+            retry_prompt = (root / "retry-prompt.txt").read_text(encoding="utf-8")
+            self.assertEqual(result.status, "complete")
+            self.assertIn("Use delimiter file blocks only", retry_prompt)
+            self.assertNotIn("Use complete fenced file blocks", retry_prompt)
+
     def test_file_writer_retry_compacts_large_previous_outputs(self) -> None:
         outputs = {
             "scene-draft.patch": "a" * 5000,
@@ -903,6 +1049,162 @@ Acceptance Criteria:
         self.assertIn("previous output truncated", compacted["scene-draft.patch"])
         self.assertLess(len(compacted["scene-draft.patch"]), 180)
         self.assertEqual(compacted["draft-validation.md"], "Patch validation failed")
+
+    def test_file_writer_first_attempt_preserves_large_previous_outputs(self) -> None:
+        outputs = {"plan": "a" * 5000}
+
+        compacted = _file_writer_previous_outputs(outputs, retry_count=0, max_chars=100)
+
+        self.assertEqual(compacted["plan"], "a" * 5000)
+
+    def test_file_writer_previous_outputs_strip_wrapped_agent_prompts(self) -> None:
+        output = "\n".join(
+            [
+                "# Agent Output: plan",
+                "",
+                "## stdout",
+                "",
+                "```text",
+                "useful plan",
+                "```",
+                "",
+                "## stderr",
+                "",
+                "```text",
+                "```",
+                "",
+                "## Prompt",
+                "",
+                "```markdown",
+                "huge prompt marker",
+                "```",
+            ]
+        )
+
+        compacted = _file_writer_previous_outputs({"plan": output}, retry_count=0)
+
+        self.assertEqual(compacted["plan"], "useful plan")
+        self.assertNotIn("huge prompt marker", compacted["plan"])
+
+    def test_state_update_file_writer_gets_focused_context_and_current_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            (root / "story").mkdir()
+            (root / "story" / "plot-state.md").write_text("# Plot State\n\n- Before\n", encoding="utf-8")
+            (root / "fake_state_writer.py").write_text(
+                "\n".join(
+                    [
+                        "import sys",
+                        "prompt = sys.stdin.read()",
+                        "open('state-prompt.txt', 'w', encoding='utf-8').write(prompt)",
+                        "if 'current_allowed_files' in prompt and 'huge-plan-marker' not in prompt:",
+                        "    print('FILE: story/plot-state.md')",
+                        "    print('---CONTENT---')",
+                        "    print('# Plot State')",
+                        "    print()",
+                        "    print('- Before')",
+                        "    print('- After')",
+                        "    print('---END---')",
+                        "else:",
+                        "    print('')",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            config = make_config(
+                root,
+                (
+                    StageConfig(id="plan", type="agent", agent="planner", output="plan.md"),
+                    StageConfig(
+                        id="update_state",
+                        type="file_writer",
+                        agent="state_updater",
+                        allowed_paths=("story/plot-state.md",),
+                    ),
+                ),
+            )
+            config.agents["planner"] = AgentConfig(
+                id="planner",
+                backend="command",
+                command="python -c \"print('huge-plan-marker' * 1000)\"",
+                system_prompt=Path("planner.md"),
+            )
+            config.agents["state_updater"] = AgentConfig(
+                id="state_updater",
+                backend="command",
+                command="python fake_state_writer.py",
+                system_prompt=Path("planner.md"),
+            )
+            runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+
+            result = runner.run_task(parse_tasks(TASK_MD)[0])
+
+            prompt = (root / "state-prompt.txt").read_text(encoding="utf-8")
+            self.assertEqual(result.status, "complete")
+            self.assertIn("current_allowed_files", prompt)
+            self.assertIn("# Plot State", prompt)
+            self.assertNotIn("huge-plan-marker", prompt)
+
+    def test_scene_editor_file_writer_gets_current_scene_file(self) -> None:
+        task_md = """# Tasks
+
+- [ ] SCENE-001: Edit scene
+
+Description:
+Repair the scene.
+
+Acceptance Criteria:
+- Writes:
+- `story/chapters/chapter-001/scene-001.md`
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            (root / "tasks.md").write_text(task_md, encoding="utf-8")
+            scene_path = root / "story" / "chapters" / "chapter-001" / "scene-001.md"
+            scene_path.parent.mkdir(parents=True)
+            scene_path.write_text("Proxy walked home.\n", encoding="utf-8")
+            (root / "fake_editor.py").write_text(
+                "\n".join(
+                    [
+                        "import sys",
+                        "prompt = sys.stdin.read()",
+                        "open('editor-prompt.txt', 'w', encoding='utf-8').write(prompt)",
+                        "if 'current_scene_file' in prompt and 'Proxy walked home.' in prompt:",
+                        "    print('FILE: story/chapters/chapter-001/scene-001.md')",
+                        "    print('---CONTENT---')",
+                        "    print('Proxy walked home corrected.')",
+                        "    print('---END---')",
+                        "else:",
+                        "    print('')",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            stages = (
+                StageConfig(
+                    id="edit_scene",
+                    type="file_writer",
+                    agent="editor",
+                    allowed_paths=("story/chapters",),
+                ),
+            )
+            config = make_config(root, stages)
+            config.agents["editor"] = AgentConfig(
+                id="editor",
+                backend="command",
+                command="python fake_editor.py",
+                system_prompt=Path("planner.md"),
+            )
+            runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+
+            result = runner.run_task(parse_tasks(task_md)[0])
+
+            prompt = (root / "editor-prompt.txt").read_text(encoding="utf-8")
+            self.assertEqual(result.status, "complete")
+            self.assertIn("current_scene_file", prompt)
+            self.assertIn("Proxy walked home.", prompt)
 
     def test_patch_validator_rejects_unsafe_patch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

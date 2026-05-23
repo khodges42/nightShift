@@ -112,10 +112,26 @@ def parse_file_updates(text: str) -> tuple[FileUpdate, ...]:
 
 
 def _parse_delimited_file_updates(text: str) -> list[FileUpdate]:
+    updates: list[FileUpdate] = []
+    header_pattern = re.compile(r"(?m)^FILE:\s*(?P<path>[^\n]+)\n---CONTENT---\n")
+    matches = list(header_pattern.finditer(text))
+    for index, match in enumerate(matches):
+        path = match.group("path").strip().strip("`")
+        content_start = match.end()
+        next_file_start = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        raw_content = text[content_start:next_file_start]
+        end_match = re.search(r"(?m)^---END---\s*$", raw_content)
+        if end_match:
+            raw_content = raw_content[: end_match.start()]
+        content = raw_content.rstrip("\r\n") + "\n"
+        if path:
+            updates.append(FileUpdate(path=path, content=content))
+    if updates:
+        return updates
+
     pattern = re.compile(
         r"(?ms)^FILE:\s*(?P<path>[^\n]+)\n---CONTENT---\n(?P<content>.*?)\n---END---\s*$"
     )
-    updates: list[FileUpdate] = []
     for match in pattern.finditer(text):
         path = match.group("path").strip().strip("`")
         content = match.group("content")
@@ -146,6 +162,7 @@ def generate_patch_from_file_updates(
         _validate_allowed_patch_path(normalized_path, root, allowed_paths)
         file_path = resolve_inside_root(root, normalized_path, f"file update '{normalized_path}'")
         old_text = file_path.read_text(encoding="utf-8", errors="replace") if file_path.exists() else ""
+        _validate_protected_character_canon(normalized_path, old_text, update.content)
         if old_text == update.content:
             continue
         patch_parts.extend(_diff_for_file(normalized_path, old_text, update.content, file_path.exists()))
@@ -206,6 +223,51 @@ def _validate_allowed_patch_path(path_text: str, root: Path, allowed_paths: tupl
             f"Patch validation failed: path `{path_text}` is not allowed for this stage. "
             f"Allowed paths: {allowed}."
         )
+
+
+def _validate_protected_character_canon(path_text: str, old_text: str, new_text: str) -> None:
+    if path_text.replace("\\", "/") != "story/characters.md" or not old_text:
+        return
+    old_sections = _pronoun_reference_sections(old_text)
+    if not old_sections:
+        return
+    new_sections = _pronoun_reference_sections(new_text)
+    changed = [
+        character
+        for character, old_section in old_sections.items()
+        if new_sections.get(character) != old_section
+    ]
+    if changed:
+        names = ", ".join(changed)
+        raise PipelineError(
+            "File writer error: protected character pronoun canon changed in "
+            f"`story/characters.md` for: {names}."
+        )
+
+
+def _pronoun_reference_sections(text: str) -> dict[str, str]:
+    sections: dict[str, str] = {}
+    current_character: str | None = None
+    lines = text.splitlines()
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if line.startswith("## "):
+            current_character = line[3:].strip()
+            index += 1
+            continue
+        if current_character and line.strip() == "### Pronouns / Reference":
+            start = index
+            index += 1
+            while index < len(lines):
+                candidate = lines[index]
+                if candidate.startswith("## ") or candidate.startswith("### "):
+                    break
+                index += 1
+            sections[current_character] = "\n".join(lines[start:index]).strip()
+            continue
+        index += 1
+    return sections
 
 
 def format_validation_result(result: PatchValidationResult) -> str:

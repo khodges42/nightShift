@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import json
 from pathlib import Path
 import re
 import subprocess
@@ -181,7 +182,7 @@ class PipelineRunner:
             stage_results.append(result)
             if stage.id in previous_outputs:
                 del previous_outputs[stage.id]
-            previous_outputs[stage.id] = self._read_output(result.output_path)
+            previous_outputs[stage.id] = self._read_context_output(result.output_path)
             telemetry_entries.append(self._telemetry_entry(stage, result, retry_count))
             self._write_telemetry(task.id, telemetry_entries)
             self.logger.event(
@@ -198,6 +199,7 @@ class PipelineRunner:
                 retry_notes.append(f"Context update from '{stage.id}': {result.context_update}")
 
             if result.status == "pass":
+                pass_target_stage = result.next_stage or stage.on_pass
                 if stage.type in {"agent_review", "review"} and result.next_stage:
                     self.logger.event(
                         "stage.next_ignored",
@@ -207,13 +209,12 @@ class PipelineRunner:
                         stage_id=stage.id,
                         requested_next_stage=result.next_stage,
                     )
-                    index += 1
-                    continue
-                if result.next_stage:
-                    if result.next_stage not in stage_indexes:
+                    pass_target_stage = stage.on_pass
+                if pass_target_stage:
+                    if pass_target_stage not in stage_indexes:
                         final_status = "failed"
                         final_reason = (
-                            f"Stage '{stage.id}' requested unknown next stage '{result.next_stage}'."
+                            f"Stage '{stage.id}' requested unknown next stage '{pass_target_stage}'."
                         )
                         break
                     self.logger.event(
@@ -222,18 +223,14 @@ class PipelineRunner:
                         run_id=self.artifacts.run_id,
                         task_id=task.id,
                         stage_id=stage.id,
-                        next_stage=result.next_stage,
+                        next_stage=pass_target_stage,
                     )
-                    index = stage_indexes[result.next_stage]
+                    index = stage_indexes[pass_target_stage]
                     continue
                 index += 1
                 continue
 
-            target_stage = result.next_stage or (
-                stage.on_fail
-                if not (stage.type in {"agent_review", "review"} and _is_malformed_review_result(result))
-                else None
-            )
+            target_stage = _failure_target_stage(stage, result)
             analysis_note = self._write_failure_diagnostics(stage, task, result, retry_count)
             if analysis_note:
                 retry_notes.append(analysis_note)
@@ -629,8 +626,7 @@ class PipelineRunner:
             task_context=context.task_context,
             retry_context=context.retry_context,
         )
-        raw_output = self._read_output(result.output_path)
-        stdout = extract_agent_stdout(raw_output)
+        stdout = self._read_agent_stdout(result.output_path)
         lookup_requests = parse_lookup_requests(stdout)
         if lookup_requests and "diff --git " not in stdout:
             lookup_context = self.repo_tools.execute_requests(
@@ -660,8 +656,7 @@ class PipelineRunner:
                 task_context=context.task_context,
                 retry_context="\n".join(f"- {note}" for note in rerun_notes),
             )
-            raw_output = self._read_output(result.output_path)
-            stdout = extract_agent_stdout(raw_output)
+            stdout = self._read_agent_stdout(result.output_path)
         try:
             patch = extract_unified_diff(stdout)
         except PipelineError as exc:
@@ -709,7 +704,18 @@ class PipelineRunner:
     ) -> StageResult:
         if stage.agent is None:
             raise PipelineError(f"Pipeline error: file_writer stage '{stage.id}' must reference an agent.")
-        enriched_outputs = _file_writer_previous_outputs(previous_outputs, retry_count)
+        if _is_state_update_stage(stage):
+            enriched_outputs = _state_update_previous_outputs(previous_outputs)
+            allowed_file_contents = self._allowed_file_contents(stage)
+            if allowed_file_contents:
+                enriched_outputs["current_allowed_files"] = allowed_file_contents
+        elif _is_scene_edit_stage(stage):
+            enriched_outputs = _file_writer_previous_outputs(previous_outputs, retry_count)
+            current_scene = self._task_scene_file_contents(task)
+            if current_scene:
+                enriched_outputs["current_scene_file"] = current_scene
+        else:
+            enriched_outputs = _file_writer_previous_outputs(previous_outputs, retry_count)
         context_pack_path = self._latest_task_artifact(task.id, "context-pack.md")
         if context_pack_path is not None:
             enriched_outputs["context-pack.md"] = context_pack_path.read_text(encoding="utf-8", errors="replace")
@@ -727,8 +733,7 @@ class PipelineRunner:
             task_context=context.task_context,
             retry_context=context.retry_context,
         )
-        raw_output = self._read_output(result.output_path)
-        stdout = extract_agent_stdout(raw_output)
+        stdout = self._read_agent_stdout(result.output_path)
         lookup_requests = parse_lookup_requests(stdout)
         if lookup_requests and "```file:" not in stdout.lower() and "```path:" not in stdout.lower():
             lookup_context = self.repo_tools.execute_requests(
@@ -758,8 +763,7 @@ class PipelineRunner:
                 task_context=context.task_context,
                 retry_context="\n".join(f"- {note}" for note in rerun_notes),
             )
-            raw_output = self._read_output(result.output_path)
-            stdout = extract_agent_stdout(raw_output)
+            stdout = self._read_agent_stdout(result.output_path)
         invalid_rerun_done = False
         candidate_index_path: Path | None = None
         while True:
@@ -803,7 +807,7 @@ class PipelineRunner:
                     strict_notes = [
                         *retry_notes,
                         "Previous file_writer output was invalid. Return complete file blocks now. Do not output lookup_requests, prose, or 'lookup failed'.",
-                        "Use complete fenced file blocks with both the opening ```file:path and closing ``` fence.",
+                        _file_writer_repair_format_note(stage),
                     ]
                     result = self.agent_executor.run_stage(
                         agent_stage,
@@ -814,8 +818,7 @@ class PipelineRunner:
                         task_context=context.task_context,
                         retry_context="\n".join(f"- {note}" for note in strict_notes),
                     )
-                    raw_output = self._read_output(result.output_path)
-                    stdout = extract_agent_stdout(raw_output)
+                    stdout = self._read_agent_stdout(result.output_path)
                     continue
                 try:
                     patch = normalize_patch_text(stdout)
@@ -923,6 +926,44 @@ class PipelineRunner:
         lines.append("")
         return self.artifacts.write_stage_output(task_id, f"{base}/index.md", "\n".join(lines))
 
+    def _allowed_file_contents(self, stage: StageConfig, max_chars: int = 2400) -> str:
+        sections: list[str] = []
+        for path_text in stage.allowed_paths:
+            path = self.config.project.root / path_text
+            if not path.is_file():
+                continue
+            content = path.read_text(encoding="utf-8", errors="replace")
+            sections.extend(
+                [
+                    f"## {path_text}",
+                    "",
+                    "```text",
+                    _compact_previous_output(content, max_chars=max_chars).rstrip(),
+                    "```",
+                    "",
+                ]
+            )
+        return "\n".join(sections).strip()
+
+    def _task_scene_file_contents(self, task: Task, max_chars: int = 10000) -> str:
+        sections: list[str] = []
+        for path_text in _task_story_chapter_paths(task):
+            path = self.config.project.root / path_text
+            if not path.is_file():
+                continue
+            content = path.read_text(encoding="utf-8", errors="replace")
+            sections.extend(
+                [
+                    f"## {path_text}",
+                    "",
+                    "```text",
+                    _compact_previous_output(content, max_chars=max_chars).rstrip(),
+                    "```",
+                    "",
+                ]
+            )
+        return "\n".join(sections).strip()
+
     def _writer_agent_stage(self, stage: StageConfig, retry_count: int) -> StageConfig:
         suffix = f"-{retry_count}" if retry_count else ""
         return replace(
@@ -975,7 +1016,7 @@ class PipelineRunner:
                 task_context=self.context.read_context(task, retry_notes).task_context,
                 retry_context=self.context.read_context(task, retry_notes).retry_context,
             )
-            source = extract_agent_stdout(self._read_output(result.output_path))
+            source = self._read_agent_stdout(result.output_path)
         try:
             patch = normalize_patch_text(source)
         except PipelineError as exc:
@@ -1127,8 +1168,7 @@ class PipelineRunner:
         task: Task,
         result: StageResult,
     ) -> StageResult | None:
-        output_text = self._read_output(result.output_path)
-        requests = parse_resource_requests(extract_agent_stdout(output_text))
+        requests = parse_resource_requests(self._read_agent_stdout(result.output_path))
         if not requests:
             return None
         paths = satisfy_resource_requests(self.artifacts, task.id, requests)
@@ -1338,8 +1378,7 @@ class PipelineRunner:
     ) -> StageResult:
         if result.status != "pass" or result.output_path is None:
             return result
-        output_text = self._read_output(result.output_path)
-        requests = parse_lookup_requests(extract_agent_stdout(output_text))
+        requests = parse_lookup_requests(self._read_agent_stdout(result.output_path))
         if not requests:
             return result
         lookup_context = self.repo_tools.execute_requests(
@@ -1457,6 +1496,25 @@ class PipelineRunner:
             return ""
         return path.read_text(encoding="utf-8")
 
+    def _read_context_output(self, output_path: str | None) -> str:
+        stdout = self._read_agent_stdout(output_path)
+        return stdout if stdout else self._read_output(output_path)
+
+    def _read_agent_stdout(self, output_path: str | None) -> str:
+        if output_path is None:
+            return ""
+        path = self.config.project.root / Path(output_path)
+        json_path = _agent_invocation_json_path(path)
+        if json_path.exists():
+            try:
+                data = json.loads(json_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                data = {}
+            stdout = data.get("stdout")
+            if isinstance(stdout, str):
+                return stdout
+        return extract_agent_stdout(self._read_output(output_path))
+
     def _format_retry_note(
         self,
         retry_count: int,
@@ -1468,6 +1526,16 @@ class PipelineRunner:
             f"Retry {retry_count}: stage '{stage.id}' returned "
             f"{result.status} ({result.reason}); redirecting to '{target_stage}'."
         )
+        if (
+            target_stage == "update_state"
+            and "deletion-heavy patch" in result.reason.lower()
+        ):
+            note = (
+                f"{note}\n"
+                "Repair guidance: preserve existing durable state text unless it directly conflicts "
+                "with the accepted scene. Make minimal additive edits instead of replacing whole "
+                "sections or compressing character/world files."
+            )
         excerpt = self._failure_excerpt(result.output_path)
         if not excerpt:
             return note
@@ -1683,6 +1751,16 @@ def _is_malformed_review_result(result: StageResult) -> bool:
     )
 
 
+def _failure_target_stage(stage: StageConfig, result: StageResult) -> str | None:
+    if stage.type not in {"agent_review", "review"}:
+        return result.next_stage or stage.on_fail
+    if _is_malformed_review_result(result):
+        return None
+    if result.next_stage and result.next_stage != stage.id:
+        return result.next_stage
+    return stage.on_fail
+
+
 def _review_previous_outputs(previous_outputs: dict[str, str], max_chars: int = 1600) -> dict[str, str]:
     compacted: dict[str, str] = {}
     priority_names = {
@@ -1736,6 +1814,15 @@ def _file_writer_stage_guidance(stage: StageConfig) -> str:
     return ""
 
 
+def _file_writer_repair_format_note(stage: StageConfig) -> str:
+    if _is_state_update_stage(stage):
+        return (
+            "Use delimiter file blocks only: FILE: path, ---CONTENT---, complete file content, "
+            "---END---. Do not use markdown code fences for state update output."
+        )
+    return "Use complete fenced file blocks with both the opening ```file:path and closing ``` fence."
+
+
 def _candidate_artifact_name(path_text: str) -> str:
     name = path_text.replace("\\", "/").strip().strip("/")
     name = re.sub(r"[^A-Za-z0-9_.-]+", "_", name)
@@ -1748,12 +1835,68 @@ def _file_writer_previous_outputs(
     retry_count: int,
     max_chars: int = 1200,
 ) -> dict[str, str]:
-    if retry_count <= 0:
-        return dict(previous_outputs)
     compacted: dict[str, str] = {}
     for name, output in previous_outputs.items():
-        compacted[name] = _compact_previous_output(output, max_chars=max_chars)
+        clean_output = _compact_agent_artifact_output(output)
+        if retry_count <= 0:
+            compacted[name] = clean_output
+            continue
+        compacted[name] = _compact_previous_output(clean_output, max_chars=max_chars)
     return compacted
+
+
+def _is_state_update_stage(stage: StageConfig) -> bool:
+    state_paths = {
+        "story/plot-state.md",
+        "story/characters.md",
+        "story/timeline.md",
+        "story/unresolved-threads.md",
+    }
+    allowed = {path.replace("\\", "/").rstrip("/") for path in stage.allowed_paths}
+    return stage.type == "file_writer" and bool(allowed) and allowed.issubset(state_paths)
+
+
+def _is_scene_edit_stage(stage: StageConfig) -> bool:
+    allowed = {path.replace("\\", "/").rstrip("/") for path in stage.allowed_paths}
+    return stage.type == "file_writer" and stage.id.startswith("edit_") and "story/chapters" in allowed
+
+
+def _task_story_chapter_paths(task: Task) -> tuple[str, ...]:
+    paths: list[str] = []
+    seen: set[str] = set()
+    for match in re.finditer(r"story/chapters/[^\s`]+?\.md", task.raw_markdown):
+        path = match.group(0).strip().strip("`")
+        if path not in seen:
+            paths.append(path)
+            seen.add(path)
+    return tuple(paths)
+
+
+def _state_update_previous_outputs(previous_outputs: dict[str, str]) -> dict[str, str]:
+    compacted: dict[str, str] = {}
+    for name in ("draft_scene", "apply_draft", "continuity_review", "style_review"):
+        output = previous_outputs.get(name)
+        if output:
+            compacted[name] = _compact_previous_output(_compact_agent_artifact_output(output), max_chars=1800)
+    for name, output in previous_outputs.items():
+        if name in compacted or name in {"plan", "semantic_context", "context"}:
+            continue
+        if "draft" in name or "review" in name or "apply" in name:
+            compacted[name] = _compact_previous_output(_compact_agent_artifact_output(output), max_chars=1200)
+    return compacted
+
+
+def _compact_agent_artifact_output(output: str) -> str:
+    if "# Agent Output:" not in output or "## Prompt" not in output:
+        return output
+    stdout = extract_agent_stdout(output).strip()
+    return stdout if stdout else output
+
+
+def _agent_invocation_json_path(output_path: Path) -> Path:
+    if output_path.suffix:
+        return output_path.with_suffix(".json")
+    return output_path.with_name(output_path.name + ".json")
 
 
 def _compact_previous_output(output: str, max_chars: int = 1200) -> str:

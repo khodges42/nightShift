@@ -55,6 +55,40 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(ConfigError, "on_fail references unknown stage"):
                 load_config(config_path)
 
+    def test_on_pass_must_reference_existing_stage(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            init_project(root)
+            config_path = root / "nightshift.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace(
+                    "on_fail: plan", "on_pass: missing_stage", 1
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ConfigError, "on_pass references unknown stage"):
+                load_config(config_path)
+
+    def test_on_pass_loads(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            init_project(root)
+            config_path = root / "nightshift.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace(
+                    "      output: plan.md",
+                    "      output: plan.md\n      on_pass: summarize",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+
+            config = load_config(config_path)
+            plan_stage = next(stage for stage in config.pipeline.stages if stage.id == "plan")
+
+            self.assertEqual(plan_stage.on_pass, "summarize")
+
     def test_validate_requires_prompt_files(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

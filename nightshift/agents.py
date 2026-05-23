@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import asdict
 import json
 import os
 from pathlib import Path
@@ -119,6 +120,11 @@ class AgentExecutor:
         output_filename = stage.output or f"{stage.id}.md"
         output = format_agent_invocation(stage.id, invocation)
         output_path = self.artifacts.write_stage_output(task.id, output_filename, output)
+        json_output_path = self.artifacts.write_stage_output(
+            task.id,
+            _agent_invocation_json_filename(output_filename),
+            format_agent_invocation_json(stage.id, invocation),
+        )
         self.logger.event(
             "artifact.write",
             "Wrote agent artifact",
@@ -126,6 +132,7 @@ class AgentExecutor:
             task_id=task.id,
             agent_id=agent.id,
             artifact_path=output_path.relative_to(self.project_root),
+            json_artifact_path=json_output_path.relative_to(self.project_root),
         )
 
         if invocation.timed_out:
@@ -520,11 +527,28 @@ def _file_writer_block_contract(stage: StageConfig) -> str:
         return "\n".join(
             [
                 "Use exactly this delimiter format for the scene file:",
-                "FILE: story/chapters/chapter-001/scene-001.md",
+                "FILE: <the exact story/chapters path listed under Writes in the current task>",
                 "---CONTENT---",
                 "<complete scene prose>",
                 "---END---",
                 "Do not use markdown code fences for prose scene output.",
+            ]
+        )
+    state_paths = {
+        "story/plot-state.md",
+        "story/characters.md",
+        "story/timeline.md",
+        "story/unresolved-threads.md",
+    }
+    if set(normalized).issubset(state_paths) and normalized:
+        return "\n".join(
+            [
+                "Use exactly this delimiter format for each state file you update:",
+                "FILE: story/plot-state.md",
+                "---CONTENT---",
+                "<complete updated state file>",
+                "---END---",
+                "Do not use markdown code fences for state update output.",
             ]
         )
     return "\n".join(
@@ -622,3 +646,18 @@ def format_agent_invocation(stage_id: str, invocation: AgentInvocation) -> str:
             "",
         ]
     )
+
+
+def format_agent_invocation_json(stage_id: str, invocation: AgentInvocation) -> str:
+    data = {
+        **asdict(invocation),
+        "stage_id": stage_id,
+    }
+    return json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+
+
+def _agent_invocation_json_filename(output_filename: str) -> str:
+    path = Path(output_filename)
+    if path.suffix:
+        return path.with_suffix(".json").as_posix()
+    return path.with_name(path.name + ".json").as_posix()

@@ -260,6 +260,47 @@ Sunlight did not belong here.
         self.assertEqual(updates[0].path, "story/chapters/chapter-001/scene-001.md")
         self.assertEqual(updates[0].content, "Sunlight did not belong here.\n")
 
+    def test_file_updates_parse_delimiters_without_end_before_next_file(self) -> None:
+        updates = parse_file_updates(
+            """Intro prose is ignored.
+
+FILE: story/plot-state.md
+---CONTENT---
+# Plot State
+
+- Scene two happened.
+
+FILE: story/timeline.md
+---CONTENT---
+# Timeline
+
+- SCENE-002 complete.
+"""
+        )
+
+        self.assertEqual(len(updates), 2)
+        self.assertEqual(updates[0].path, "story/plot-state.md")
+        self.assertEqual(updates[0].content, "# Plot State\n\n- Scene two happened.\n")
+        self.assertEqual(updates[1].path, "story/timeline.md")
+        self.assertEqual(updates[1].content, "# Timeline\n\n- SCENE-002 complete.\n")
+
+    def test_file_updates_parse_mixed_delimiter_end_and_next_file(self) -> None:
+        updates = parse_file_updates(
+            """FILE: story/plot-state.md
+---CONTENT---
+first
+---END---
+
+FILE: story/timeline.md
+---CONTENT---
+second
+"""
+        )
+
+        self.assertEqual(len(updates), 2)
+        self.assertEqual(updates[0].content, "first\n")
+        self.assertEqual(updates[1].content, "second\n")
+
     def test_file_updates_reject_duplicate_blocks(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -333,6 +374,48 @@ new
             patch = generate_patch_from_file_updates(updates, root, safety)
 
             self.assertEqual(patch.count("diff --git a/app.py b/app.py"), 1)
+
+    def test_file_updates_reject_character_pronoun_canon_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "story").mkdir()
+            (root / "story" / "characters.md").write_text(
+                """# Characters
+
+## Cricket
+
+### Pronouns / Reference
+- Pronouns: she/her
+- Narrative reference: Cricket; she/her
+
+Scavenger.
+""",
+                encoding="utf-8",
+            )
+            safety = SafetyConfig(
+                require_clean_worktree=False,
+                scoped_paths=("story",),
+                allowed_commands=(),
+                forbidden_commands=(),
+            )
+            updates = parse_file_updates(
+                """FILE: story/characters.md
+---CONTENT---
+# Characters
+
+## Cricket
+
+### Pronouns / Reference
+- Pronouns: they/them
+- Narrative reference: Cricket; they/them
+
+Scavenger.
+---END---
+"""
+            )
+
+            with self.assertRaisesRegex(PipelineError, "protected character pronoun canon changed"):
+                generate_patch_from_file_updates(updates, root, safety)
 
 
 if __name__ == "__main__":

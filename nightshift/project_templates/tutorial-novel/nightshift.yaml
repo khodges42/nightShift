@@ -37,6 +37,14 @@ agents:
     num_predict: 8192
     system_prompt: .nightshift/agents/drafter.md
 
+  editor:
+    backend: ollama
+    model: nightshift-writer
+    temperature: 0.3
+    num_ctx: 16384
+    num_predict: 8192
+    system_prompt: .nightshift/agents/editor.md
+
   continuity_reviewer:
     backend: ollama
     model: nightshift-base
@@ -110,13 +118,42 @@ pipeline:
       type: agent_review
       agent: continuity_reviewer
       output: continuity-review.md
-      on_fail: draft_scene
+      on_fail: edit_scene
 
     - id: style_review
       type: agent_review
       agent: style_reviewer
       output: style-review.md
-      on_fail: draft_scene
+      on_fail: edit_scene
+      on_pass: update_state
+
+    - id: edit_scene
+      type: file_writer
+      agent: editor
+      output: scene-edit.patch
+      allowed_paths:
+        - story/chapters
+
+    - id: normalize_edit
+      type: patch_normalizer
+      output: normalized-edit.patch
+
+    - id: validate_edit
+      type: patch_validator
+      output: edit-validation.md
+      max_files: 2
+      max_lines: 1200
+      max_delete_ratio: 0.50
+      allowed_paths:
+        - story/chapters
+      on_fail: edit_scene
+
+    - id: apply_edit
+      type: patch_apply
+      mode: apply
+      output: edit-apply-output.txt
+      on_fail: edit_scene
+      on_pass: continuity_review
 
     - id: update_state
       type: file_writer

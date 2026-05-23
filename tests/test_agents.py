@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from nightshift.agents import AgentExecutor, build_prompt_bundle, parse_review_output, strip_ansi_escape_sequences
-from nightshift.agents import AgentInvocation, format_agent_invocation
+from nightshift.agents import AgentInvocation, format_agent_invocation, format_agent_invocation_json
 from nightshift.artifacts import ArtifactStore
 from nightshift.config import AgentConfig, StageConfig
 from nightshift.tasks import parse_tasks
@@ -93,7 +93,7 @@ class AgentExecutorTests(unittest.TestCase):
 
         self.assertIn("Use only paths under these project-relative targets: `story/chapters`.", prompt)
         self.assertIn("This is the drafting stage", prompt)
-        self.assertIn("FILE: story/chapters/chapter-001/scene-001.md", prompt)
+        self.assertIn("FILE: <the exact story/chapters path listed under Writes in the current task>", prompt)
         self.assertIn("---CONTENT---", prompt)
         self.assertIn("---END---", prompt)
         self.assertIn("Do not use markdown code fences", prompt)
@@ -125,6 +125,10 @@ class AgentExecutorTests(unittest.TestCase):
             output = (root / result.output_path).read_text(encoding="utf-8")
             self.assertIn("TASK-001", output)
             self.assertIn("Plan carefully.", output)
+            json_output = (root / ".nightshift" / "runs" / "test-run" / "tasks" / task.id / "plan.json")
+            self.assertTrue(json_output.exists())
+            self.assertIn('"stage_id": "plan"', json_output.read_text(encoding="utf-8"))
+            self.assertIn('"stdout"', json_output.read_text(encoding="utf-8"))
 
     def test_review_output_parser_accepts_structured_status(self) -> None:
         status, reason, next_stage, context_update = parse_review_output(
@@ -237,6 +241,23 @@ class AgentExecutorTests(unittest.TestCase):
 
         self.assertIn("Agent: `planner`", output)
         self.assertIn("## stderr", output)
+
+    def test_agent_invocation_json_preserves_raw_streams(self) -> None:
+        invocation = AgentInvocation(
+            agent_id="planner",
+            command="cmd",
+            prompt="prompt with ``` fences",
+            exit_code=0,
+            stdout="stdout with ``` fences",
+            stderr="stderr",
+            duration_seconds=0.1,
+        )
+
+        output = format_agent_invocation_json("plan", invocation)
+
+        self.assertIn('"stage_id": "plan"', output)
+        self.assertIn('stdout with ``` fences', output)
+        self.assertIn('prompt with ``` fences', output)
 
     def test_strip_ansi_escape_sequences(self) -> None:
         self.assertEqual(strip_ansi_escape_sequences("\x1b[?25lthinking\x1b[0m"), "thinking")
