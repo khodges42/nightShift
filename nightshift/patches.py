@@ -106,32 +106,16 @@ def parse_file_updates(text: str) -> tuple[FileUpdate, ...]:
         updates.append(FileUpdate(path=path, content=content))
     if not updates:
         raise PipelineError(
-            "File writer error: no file blocks found. Expected FILE: path with ---CONTENT---/---END--- or fenced blocks like ```file:path.py."
+            "File writer error: no file blocks found. Expected fenced blocks like ```file:path.to."
         )
     return tuple(updates)
 
 
 def _parse_delimited_file_updates(text: str) -> list[FileUpdate]:
-    updates: list[FileUpdate] = []
-    header_pattern = re.compile(r"(?m)^FILE:\s*(?P<path>[^\n]+)\n---CONTENT---\n")
-    matches = list(header_pattern.finditer(text))
-    for index, match in enumerate(matches):
-        path = match.group("path").strip().strip("`")
-        content_start = match.end()
-        next_file_start = matches[index + 1].start() if index + 1 < len(matches) else len(text)
-        raw_content = text[content_start:next_file_start]
-        end_match = re.search(r"(?m)^---END---\s*$", raw_content)
-        if end_match:
-            raw_content = raw_content[: end_match.start()]
-        content = raw_content.rstrip("\r\n") + "\n"
-        if path:
-            updates.append(FileUpdate(path=path, content=content))
-    if updates:
-        return updates
-
     pattern = re.compile(
         r"(?ms)^FILE:\s*(?P<path>[^\n]+)\n---CONTENT---\n(?P<content>.*?)\n---END---\s*$"
     )
+    updates: list[FileUpdate] = []
     for match in pattern.finditer(text):
         path = match.group("path").strip().strip("`")
         content = match.group("content")

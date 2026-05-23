@@ -33,6 +33,7 @@ class SafetyConfig:
     allowed_commands: tuple[str, ...]
     forbidden_commands: tuple[str, ...]
     allowed_env: tuple[str, ...] = ()
+    skip_repo_parts: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -184,6 +185,9 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
     )
 
     safety_raw = _require_mapping(raw["safety"], "safety")
+    skip_repo_parts = _string_tuple(
+        safety_raw.get("skip_repo_parts", []), "safety.skip_repo_parts"
+    )
     safety = SafetyConfig(
         require_clean_worktree=_optional_bool(
             safety_raw.get("require_clean_worktree", False),
@@ -195,6 +199,7 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
             safety_raw.get("forbidden_commands", []), "safety.forbidden_commands"
         ),
         allowed_env=_string_tuple(safety_raw.get("allowed_env", []), "safety.allowed_env"),
+        skip_repo_parts=skip_repo_parts,
     )
 
     agents_raw = _require_mapping(raw["agents"], "agents")

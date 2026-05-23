@@ -17,7 +17,7 @@ from .safety import resolve_inside_root, resolve_project_root, validate_scoped_p
 DEFAULT_MAX_BYTES = 20_000
 DEFAULT_MAX_MATCHES = 100
 DEFAULT_MAX_LOOKUP_REQUESTS = 8
-SKIPPED_REPO_PARTS = {".git", ".nightshift", "__pycache__", ".venv", "venv"}
+DEFAULT_SKIPPED_REPO_PARTS = {".git", ".nightshift", "__pycache__", ".venv", "venv"}
 
 
 @dataclass(frozen=True)
@@ -45,6 +45,7 @@ class RepoTools:
             self.project_root,
             safety.scoped_paths or (".",),
         )
+        self.skipped_parts = DEFAULT_SKIPPED_REPO_PARTS | set(safety.skip_repo_parts)
 
     def list_files(self, path: str = ".", pattern: str = "*", max_files: int = 200) -> str:
         root = self._resolve_scoped(path, "list_files path")
@@ -57,7 +58,7 @@ class RepoTools:
         relative_files = [
             _relative(item, self.project_root)
             for item in sorted(candidates)
-            if fnmatch.fnmatch(item.name, pattern) and not _is_skipped_repo_path(item, self.project_root)
+            if fnmatch.fnmatch(item.name, pattern) and not _is_skipped_repo_path(item, self.project_root, self.skipped_parts)
         ]
         lines = relative_files[:max_files]
         if len(relative_files) > max_files:
@@ -66,7 +67,7 @@ class RepoTools:
 
     def read_file(self, path: str, max_bytes: int = DEFAULT_MAX_BYTES) -> str:
         file_path = self._resolve_scoped(path, "read_file path")
-        if _is_skipped_repo_path(file_path, self.project_root):
+        if _is_skipped_repo_path(file_path, self.project_root, self.skipped_parts):
             return f"Path is skipped for repository lookup: {path}"
         if not file_path.exists() or not file_path.is_file():
             return f"File not found: {path}"
@@ -89,7 +90,7 @@ class RepoTools:
         files = [root] if root.is_file() else [item for item in root.rglob("*") if item.is_file()]
         matches: list[str] = []
         for file_path in sorted(files):
-            if _is_skipped_repo_path(file_path, self.project_root):
+            if _is_skipped_repo_path(file_path, self.project_root, self.skipped_parts):
                 continue
             try:
                 text = file_path.read_text(encoding="utf-8", errors="replace")
@@ -270,9 +271,9 @@ def _relative(path: Path, root: Path) -> str:
         return path.as_posix()
 
 
-def _is_skipped_repo_path(path: Path, root: Path) -> bool:
+def _is_skipped_repo_path(path: Path, root: Path, skipped_parts: set[str]) -> bool:
     try:
         parts = set(path.relative_to(root).parts)
     except ValueError:
         parts = set(path.parts)
-    return bool(parts & SKIPPED_REPO_PARTS)
+    return bool(parts & skipped_parts)
