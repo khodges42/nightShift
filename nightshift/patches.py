@@ -162,7 +162,6 @@ def generate_patch_from_file_updates(
         _validate_allowed_patch_path(normalized_path, root, allowed_paths)
         file_path = resolve_inside_root(root, normalized_path, f"file update '{normalized_path}'")
         old_text = file_path.read_text(encoding="utf-8", errors="replace") if file_path.exists() else ""
-        _validate_protected_character_canon(normalized_path, old_text, update.content)
         if old_text == update.content:
             continue
         patch_parts.extend(_diff_for_file(normalized_path, old_text, update.content, file_path.exists()))
@@ -223,51 +222,6 @@ def _validate_allowed_patch_path(path_text: str, root: Path, allowed_paths: tupl
             f"Patch validation failed: path `{path_text}` is not allowed for this stage. "
             f"Allowed paths: {allowed}."
         )
-
-
-def _validate_protected_character_canon(path_text: str, old_text: str, new_text: str) -> None:
-    if path_text.replace("\\", "/") != "story/characters.md" or not old_text:
-        return
-    old_sections = _pronoun_reference_sections(old_text)
-    if not old_sections:
-        return
-    new_sections = _pronoun_reference_sections(new_text)
-    changed = [
-        character
-        for character, old_section in old_sections.items()
-        if new_sections.get(character) != old_section
-    ]
-    if changed:
-        names = ", ".join(changed)
-        raise PipelineError(
-            "File writer error: protected character pronoun canon changed in "
-            f"`story/characters.md` for: {names}."
-        )
-
-
-def _pronoun_reference_sections(text: str) -> dict[str, str]:
-    sections: dict[str, str] = {}
-    current_character: str | None = None
-    lines = text.splitlines()
-    index = 0
-    while index < len(lines):
-        line = lines[index]
-        if line.startswith("## "):
-            current_character = line[3:].strip()
-            index += 1
-            continue
-        if current_character and line.strip() == "### Pronouns / Reference":
-            start = index
-            index += 1
-            while index < len(lines):
-                candidate = lines[index]
-                if candidate.startswith("## ") or candidate.startswith("### "):
-                    break
-                index += 1
-            sections[current_character] = "\n".join(lines[start:index]).strip()
-            continue
-        index += 1
-    return sections
 
 
 def format_validation_result(result: PatchValidationResult) -> str:

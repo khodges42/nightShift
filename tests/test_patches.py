@@ -375,48 +375,5 @@ new
 
             self.assertEqual(patch.count("diff --git a/app.py b/app.py"), 1)
 
-    def test_file_updates_reject_character_pronoun_canon_changes(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / "story").mkdir()
-            (root / "story" / "characters.md").write_text(
-                """# Characters
-
-## Cricket
-
-### Pronouns / Reference
-- Pronouns: she/her
-- Narrative reference: Cricket; she/her
-
-Scavenger.
-""",
-                encoding="utf-8",
-            )
-            safety = SafetyConfig(
-                require_clean_worktree=False,
-                scoped_paths=("story",),
-                allowed_commands=(),
-                forbidden_commands=(),
-            )
-            updates = parse_file_updates(
-                """FILE: story/characters.md
----CONTENT---
-# Characters
-
-## Cricket
-
-### Pronouns / Reference
-- Pronouns: they/them
-- Narrative reference: Cricket; they/them
-
-Scavenger.
----END---
-"""
-            )
-
-            with self.assertRaisesRegex(PipelineError, "protected character pronoun canon changed"):
-                generate_patch_from_file_updates(updates, root, safety)
-
-
 if __name__ == "__main__":
     unittest.main()

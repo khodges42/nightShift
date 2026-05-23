@@ -269,6 +269,48 @@ class PipelineRunnerTests(unittest.TestCase):
             self.assertIn("files", (task_dir / "review.md").read_text(encoding="utf-8"))
             self.assertIn("strict retry ok", (task_dir / "review-1.md").read_text(encoding="utf-8"))
 
+    def test_malformed_review_retry_uses_stdout_summary_not_full_prompt_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            (root / "fake_reviewer.py").write_text(
+                "\n".join(
+                    [
+                        "import sys",
+                        "prompt = sys.stdin.read()",
+                        "if 'Previous review output was malformed' in prompt:",
+                        "    open('retry-prompt.txt', 'w', encoding='utf-8').write(prompt)",
+                        "    print('status: pass')",
+                        "    print('reason: strict retry ok')",
+                        "    print('next_stage:')",
+                        "    print('context_update:')",
+                        "else:",
+                        "    print('No extra text. No JSON.')",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            stages = (
+                StageConfig(id="implement", type="agent", agent="planner", output="implementation-log.md"),
+                StageConfig(id="review", type="agent_review", agent="reviewer", output="review.md"),
+            )
+            config = make_config(root, stages, max_retries=1)
+            config.agents["reviewer"] = AgentConfig(
+                id="reviewer",
+                backend="command",
+                command="python fake_reviewer.py",
+                system_prompt=Path("reviewer.md"),
+            )
+            runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+
+            result = runner.run_task(parse_tasks(TASK_MD)[0])
+
+            retry_prompt = (root / "retry-prompt.txt").read_text(encoding="utf-8")
+            self.assertEqual(result.status, "complete")
+            self.assertIn("malformed_review_output", retry_prompt)
+            self.assertIn("No extra text. No JSON.", retry_prompt)
+            self.assertNotIn("## Prompt", retry_prompt)
+
     def test_malformed_review_stops_without_on_fail_redraft(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -303,6 +345,31 @@ class PipelineRunnerTests(unittest.TestCase):
             self.assertEqual([item.stage_id for item in result.stage_results], ["implement", "review"])
             self.assertTrue((task_dir / "review.md").exists())
             self.assertTrue((task_dir / "review-1.md").exists())
+
+    def test_malformed_style_review_soft_passes_after_continuity_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            (root / "fake_style.py").write_text("print('No extra text. No JSON.')\n", encoding="utf-8")
+            stages = (
+                StageConfig(id="continuity_review", type="agent_review", agent="reviewer", output="continuity-review.md"),
+                StageConfig(id="style_review", type="agent_review", agent="style", output="style-review.md"),
+                StageConfig(id="summarize", type="summarize", output="final-notes.md"),
+            )
+            config = make_config(root, stages, max_retries=1)
+            config.agents["style"] = AgentConfig(
+                id="style",
+                backend="command",
+                command="python fake_style.py",
+                system_prompt=Path("reviewer.md"),
+            )
+            runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+
+            result = runner.run_task(parse_tasks(TASK_MD)[0])
+
+            self.assertEqual(result.status, "complete")
+            self.assertIn("Style review output remained malformed", result.stage_results[1].reason)
+            self.assertEqual([item.stage_id for item in result.stage_results], ["continuity_review", "style_review", "summarize"])
 
     def test_passing_review_next_stage_is_ignored(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -23,6 +23,15 @@ Do not fail the scene because durable state files are not updated yet. State fil
 
 Wrong pronouns are a continuity failure. If a drafted scene uses non-canonical pronouns for a named character, return `status: fail` and explain which character drifted. Do not pass the scene with only `context_update` guidance.
 
+Pronoun canon quick reference:
+- Proxy: she/her
+- BLOODMONEY: narrative default they/them; he/him allowed only when dialogue or close character voice has a specific reason
+- Cricket: she/her
+- Saint: he/him
+- Miette: she/her
+
+If retry notes, previous reviewer output, or generated scene text conflict with `story/characters.md`, obey `story/characters.md`. Do not infer pronouns from a previous failure note. Before failing a pronoun issue, verify the character's `Pronouns / Reference` section.
+
 Output exactly:
 
 status: pass | fail | retry | escalate

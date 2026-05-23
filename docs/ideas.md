@@ -256,3 +256,16 @@ Reason:
 - fallback makes artifacts harder to reason about
 - model variability is bad while debugging pipeline behavior
 - the default template should remain the reliability harness
+
+## P2: Adopt Useful Fork Ideas From rsarv3006
+
+Source: https://github.com/rsarv3006/nightShift/commit/649eef65546a4ae648170bf29663f939eb031d2c
+
+Author: GitHub user `rsarv3006`
+
+Useful ideas to consider porting:
+
+- Add `on_status` stage routing so review stages can route `pass`, `retry`, `fail`, and `escalate` to different follow-up stages.
+- Add configurable repo lookup exclusions, for example `safety.skip_repo_parts`, so projects can hide generated or irrelevant directories from planner/reviewer context tools.
+- Add configurable agent timeout, for example `pipeline.agent_timeout_seconds`, so long local-model runs can be tuned per project.
+- Add docs and focused tests around status-based routing behavior.

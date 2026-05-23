@@ -48,6 +48,7 @@ from .runlog import RunLogger
 from .stages import StageResult
 from .tasks import Task, mark_task_completed
 from .telemetry import TelemetryEntry, format_telemetry_summary, telemetry_from_stage_output
+from .writing_validators import validate_writing_file_updates
 
 
 @dataclass(frozen=True)
@@ -776,6 +777,8 @@ class PipelineRunner:
                     updates,
                     retry_count,
                 )
+                if _is_writing_file_writer_stage(stage):
+                    validate_writing_file_updates(updates, self.config.project.root)
                 patch = generate_patch_from_file_updates(
                     updates,
                     self.config.project.root,
@@ -794,6 +797,8 @@ class PipelineRunner:
                     and len(allowed_updates) < len(updates)
                     and "not allowed for this stage" in str(exc)
                 ):
+                    if _is_writing_file_writer_stage(stage):
+                        validate_writing_file_updates(allowed_updates, self.config.project.root)
                     patch = generate_patch_from_file_updates(
                         allowed_updates,
                         self.config.project.root,
@@ -1322,8 +1327,9 @@ class PipelineRunner:
             "Previous review output was malformed. Return exactly four lines: status, reason, next_stage, context_update. Do not return prose, headings, or analysis.",
         ]
         strict_outputs = _review_previous_outputs(previous_outputs)
+        malformed_stdout = self._read_agent_stdout(malformed_result.output_path).strip()
         strict_outputs["malformed_review_output"] = _compact_previous_output(
-            self._read_output(malformed_result.output_path),
+            malformed_stdout if malformed_stdout else self._read_output(malformed_result.output_path),
             max_chars=800,
         )
         result = self.agent_executor.run_stage(
@@ -1336,6 +1342,17 @@ class PipelineRunner:
             retry_context="\n".join(f"- {note}" for note in strict_notes),
         )
         if _is_malformed_review_result(result):
+            if stage.id == "style_review" and _previous_continuity_review_passed(previous_outputs):
+                return StageResult(
+                    result.stage_id,
+                    "pass",
+                    (
+                        "Style review output remained malformed after strict retry; "
+                        "continuing because continuity review passed and deterministic validators already ran."
+                    ),
+                    output_path=result.output_path,
+                    context_update="Style review was malformed twice; treated as soft-pass after continuity passed.",
+                )
             return StageResult(
                 result.stage_id,
                 "fail",
@@ -1784,6 +1801,13 @@ def _failure_target_stage(stage: StageConfig, result: StageResult) -> str | None
     return stage.on_fail
 
 
+def _previous_continuity_review_passed(previous_outputs: dict[str, str]) -> bool:
+    for name, output in previous_outputs.items():
+        if "continuity" in name and re.search(r"(?im)^status:\s*pass\s*$", output):
+            return True
+    return False
+
+
 def _review_previous_outputs(previous_outputs: dict[str, str], max_chars: int = 1600) -> dict[str, str]:
     compacted: dict[str, str] = {}
     priority_names = {
@@ -1894,6 +1918,18 @@ def _is_state_update_stage(stage: StageConfig) -> bool:
 def _is_scene_edit_stage(stage: StageConfig) -> bool:
     allowed = {path.replace("\\", "/").rstrip("/") for path in stage.allowed_paths}
     return stage.type == "file_writer" and stage.id.startswith("edit_") and "story/chapters" in allowed
+
+
+def _is_writing_file_writer_stage(stage: StageConfig) -> bool:
+    allowed = {path.replace("\\", "/").rstrip("/") for path in stage.allowed_paths}
+    writing_paths = {
+        "story/chapters",
+        "story/plot-state.md",
+        "story/characters.md",
+        "story/timeline.md",
+        "story/unresolved-threads.md",
+    }
+    return stage.type == "file_writer" and bool(allowed & writing_paths)
 
 
 def _task_story_chapter_paths(task: Task) -> tuple[str, ...]:

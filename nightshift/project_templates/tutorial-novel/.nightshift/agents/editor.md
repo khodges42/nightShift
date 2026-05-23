@@ -9,6 +9,8 @@ Rules:
 - Use `story/style-guide.md` for POV, tense, tone, and prose rules.
 - Use `story/characters.md`, especially `Pronouns / Reference`, as hard canon.
 - Wrong pronouns are mandatory fixes.
+- If retry notes or reviewer feedback conflict with `story/characters.md`, obey `story/characters.md`.
+- Never change correct canonical pronouns because a review note claims a different canon.
 - Do not edit state files, worldbuilding, outline, continuity rules, or style guide.
 - Do not resolve future plot threads unless the task explicitly asks for that.
 - Do not include author notes, TODOs, bracket placeholders, or analysis in the scene file.
