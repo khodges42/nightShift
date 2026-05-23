@@ -105,29 +105,145 @@ class PipelineRunnerTests(unittest.TestCase):
             )
             self.assertIn("Modified Files", (root / ".nightshift" / "runs" / "test-run" / "run-summary.md").read_text(encoding="utf-8"))
 
-    def test_on_pass_jumps_to_configured_stage(self) -> None:
+    def test_on_status_routes_pass_to_target(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             _write_common_files(root)
             stages = (
-                StageConfig(id="first", type="agent", agent="planner", output="first.md", on_pass="third"),
+                StageConfig(id="plan", type="agent", agent="planner", output="plan.md"),
                 StageConfig(
-                    id="second",
-                    type="command",
-                    commands=('python -c "print(\'should not run\')"',),
-                    output="second-output.txt",
+                    id="review",
+                    type="agent_review",
+                    agent="reviewer",
+                    on_status={"pass": "summarize"},
+                    output="review.md",
                 ),
-                StageConfig(id="third", type="summarize", output="final-notes.md"),
+                StageConfig(id="implement", type="agent", agent="planner", output="impl.md"),
+                StageConfig(id="summarize", type="summarize", output="final-notes.md"),
             )
             config = make_config(root, stages)
             runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+            task = parse_tasks(TASK_MD)[0]
 
-            result = runner.run_task(parse_tasks(TASK_MD)[0])
+            result = runner.run_task(task)
 
-            task_dir = root / ".nightshift" / "runs" / "test-run" / "tasks" / "TASK-001"
             self.assertEqual(result.status, "complete")
-            self.assertEqual([item.stage_id for item in result.stage_results], ["first", "third"])
-            self.assertFalse((task_dir / "second-output.txt").exists())
+            self.assertEqual(result.retry_count, 0)
+            self.assertEqual(
+                [r.stage_id for r in result.stage_results],
+                ["plan", "review", "summarize"],
+            )
+
+    def test_on_status_routes_fail_to_target(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            fail_reviewer = 'python -c "print(\'status: fail\\nreason: bad plan\')"'
+            stages = (
+                StageConfig(id="plan", type="agent", agent="planner", output="plan.md"),
+                StageConfig(
+                    id="review",
+                    type="agent_review",
+                    agent="reviewer",
+                    on_status={"fail": "plan"},
+                    output="review.md",
+                ),
+                StageConfig(id="summarize", type="summarize", output="final-notes.md"),
+            )
+            config = make_config(root, stages)
+            config.agents["reviewer"] = AgentConfig(
+                id="reviewer",
+                backend="command",
+                command=fail_reviewer,
+                system_prompt=Path("reviewer.md"),
+            )
+            runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+            task = parse_tasks(TASK_MD)[0]
+
+            result = runner.run_task(task)
+
+            self.assertEqual(result.status, "failed")
+            self.assertEqual(result.retry_count, 2)
+            self.assertEqual(
+                [r.stage_id for r in result.stage_results],
+                ["plan", "review", "plan", "review", "plan", "review"],
+            )
+
+    def test_on_status_escalate_routes_to_human_not_on_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            escalate_reviewer = 'python -c "print(\'status: escalate\\nreason: need human\')"'
+            stages = (
+                StageConfig(id="plan", type="agent", agent="planner", output="plan.md"),
+                StageConfig(
+                    id="review",
+                    type="agent_review",
+                    agent="reviewer",
+                    on_status={
+                        "retry": "plan",
+                        "escalate": "human",
+                    },
+                    on_fail="plan",
+                    output="review.md",
+                ),
+                StageConfig(id="human", type="summarize", output="human-notes.md"),
+                StageConfig(id="summarize", type="summarize", output="final-notes.md"),
+            )
+            config = make_config(root, stages)
+            config.agents["reviewer"] = AgentConfig(
+                id="reviewer",
+                backend="command",
+                command=escalate_reviewer,
+                system_prompt=Path("reviewer.md"),
+            )
+            runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+            task = parse_tasks(TASK_MD)[0]
+
+            result = runner.run_task(task)
+
+            self.assertEqual(result.status, "complete")
+            self.assertEqual(result.retry_count, 1)
+            self.assertEqual(
+                [r.stage_id for r in result.stage_results],
+                ["plan", "review", "human", "summarize"],
+            )
+
+    def test_on_fail_fallback_when_status_not_in_on_status(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_common_files(root)
+            fail_reviewer = 'python -c "print(\'status: fail\\nreason: bad\')"'
+            stages = (
+                StageConfig(id="plan", type="agent", agent="planner", output="plan.md"),
+                StageConfig(
+                    id="review",
+                    type="agent_review",
+                    agent="reviewer",
+                    on_status={"retry": "plan"},
+                    on_fail="implement",
+                    output="review.md",
+                ),
+                StageConfig(id="implement", type="agent", agent="planner", output="impl.md"),
+            )
+            config = make_config(root, stages)
+            config.agents["reviewer"] = AgentConfig(
+                id="reviewer",
+                backend="command",
+                command=fail_reviewer,
+                system_prompt=Path("reviewer.md"),
+            )
+            runner = PipelineRunner(config, ArtifactStore(root, ".nightshift", run_id="test-run"))
+            task = parse_tasks(TASK_MD)[0]
+
+            result = runner.run_task(task)
+
+            self.assertEqual(result.status, "failed")
+            self.assertEqual(result.retry_count, 2)
+            self.assertEqual(
+                [r.stage_id for r in result.stage_results],
+                ["plan", "review", "implement", "review", "implement", "review"],
+            )
 
     def test_task_preflight_fails_when_task_specific_test_file_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

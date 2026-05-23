@@ -68,6 +68,12 @@ pipeline:
     - id: review
       type: agent_review
       agent: reviewer
+      # on_fail: implement        # catch-all for any non-pass status
+      # on_status:                # per-status routing (takes priority over on_fail)
+      #   pass: summarize
+      #   retry: implement
+      #   fail: plan
+      #   escalate: human
       on_fail: implement
       output: review.md
 

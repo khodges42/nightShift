@@ -200,22 +200,41 @@ class PipelineRunner:
                 retry_notes.append(f"Context update from '{stage.id}': {result.context_update}")
 
             if result.status == "pass":
-                pass_target_stage = result.next_stage or stage.on_pass
-                if stage.type in {"agent_review", "review"} and result.next_stage:
+                if stage.on_status and "pass" in stage.on_status:
+                    target = stage.on_status["pass"]
+                    if target not in stage_indexes:
+                        final_status = "failed"
+                        final_reason = (
+                            f"Stage '{stage.id}' on_status.pass references unknown stage '{target}'."
+                        )
+                        break
                     self.logger.event(
-                        "stage.next_ignored",
-                        "Ignoring next_stage from passing review",
+                        "stage.next",
+                        "Jumping via on_status.pass",
                         run_id=self.artifacts.run_id,
                         task_id=task.id,
                         stage_id=stage.id,
-                        requested_next_stage=result.next_stage,
+                        next_stage=target,
                     )
-                    pass_target_stage = stage.on_pass
-                if pass_target_stage:
-                    if pass_target_stage not in stage_indexes:
+                    index = stage_indexes[target]
+                    continue
+                if stage.type in {"agent_review", "review"}:
+                    if result.next_stage:
+                        self.logger.event(
+                            "stage.next_ignored",
+                            "Ignoring next_stage from passing review",
+                            run_id=self.artifacts.run_id,
+                            task_id=task.id,
+                            stage_id=stage.id,
+                            requested_next_stage=result.next_stage,
+                        )
+                    index += 1
+                    continue
+                if result.next_stage:
+                    if result.next_stage not in stage_indexes:
                         final_status = "failed"
                         final_reason = (
-                            f"Stage '{stage.id}' requested unknown next stage '{pass_target_stage}'."
+                            f"Stage '{stage.id}' requested unknown next stage '{result.next_stage}'."
                         )
                         break
                     self.logger.event(
@@ -224,14 +243,14 @@ class PipelineRunner:
                         run_id=self.artifacts.run_id,
                         task_id=task.id,
                         stage_id=stage.id,
-                        next_stage=pass_target_stage,
+                        next_stage=result.next_stage,
                     )
-                    index = stage_indexes[pass_target_stage]
+                    index = stage_indexes[result.next_stage]
                     continue
                 index += 1
                 continue
 
-            target_stage = _failure_target_stage(stage, result)
+            target_stage = _resolve_retry_target_stage(stage, result)
             analysis_note = self._write_failure_diagnostics(stage, task, result, retry_count)
             if analysis_note:
                 retry_notes.append(analysis_note)
@@ -1840,14 +1859,10 @@ def _is_malformed_review_result(result: StageResult) -> bool:
     )
 
 
-def _failure_target_stage(stage: StageConfig, result: StageResult) -> str | None:
-    if stage.type not in {"agent_review", "review"}:
-        return result.next_stage or stage.on_fail
-    if _is_malformed_review_result(result):
+def _resolve_retry_target_stage(stage: StageConfig, result: StageResult) -> str | None:
+    if stage.type in {"agent_review", "review"} and _is_malformed_review_result(result):
         return None
-    if result.next_stage and result.next_stage != stage.id:
-        return result.next_stage
-    return stage.on_fail
+    return (stage.on_status or {}).get(result.status) or stage.on_fail or result.next_stage
 
 
 def _previous_continuity_review_passed(previous_outputs: dict[str, str]) -> bool:

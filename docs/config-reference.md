@@ -122,6 +122,24 @@ Semantic context stage:
 
 This stage builds a lightweight repository index of files, Python symbols, imports, and tests, then writes compact relevant snippets for the current task. It is keyword based with symbol-aware scoring, so it works without a vector database or network dependency.
 
+### `on_status` Stage Routing
+
+Instead of a single `on_fail` catch-all, use `on_status` to route each review status to a different stage:
+
+```yaml
+- id: review
+  type: agent_review
+  agent: reviewer
+  output: review.md
+  on_status:
+    pass: summarize
+    retry: implement
+    fail: plan
+    escalate: human
+```
+
+`on_status` supports `pass`, `fail`, `retry`, and `escalate` keys. For `pass`, it overrides sequential progression and any agent-supplied `next_stage`. For non-pass statuses, the lookup order is: `on_status[status]` → `on_fail` → `next_stage` (agent output).
+
 ## Failure, Retry, and Resource Artifacts
 
 Failed command and validation stages write deterministic diagnostics under the task artifact directory:
