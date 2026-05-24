@@ -68,6 +68,12 @@ pipeline:
     - id: review
       type: agent_review
       agent: reviewer
+      # on_fail: implement        # catch-all for any non-pass status
+      # on_status:                # per-status routing (takes priority over on_fail)
+      #   pass: summarize
+      #   retry: implement
+      #   fail: plan
+      #   escalate: human
       on_fail: implement
       output: review.md
 
@@ -333,7 +339,7 @@ If you need repository context before planning, output lookup requests exactly l
 
 lookup_requests:
 - tool: read_file
-  path: relative/path.py
+  path: relative/path.to
 - tool: grep
   path: .
   pattern: search_regex
@@ -350,7 +356,7 @@ REAL_MODEL_IMPLEMENTER_PROMPT = """You are the implementation agent for NightShi
 
 Output only complete file content blocks.
 Use one fenced block per file with this exact opening form:
-```file:relative/path.py
+```file:relative/path.to
 <complete file content>
 ```
 Do not include explanations before or after the file blocks.

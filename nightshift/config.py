@@ -33,6 +33,7 @@ class SafetyConfig:
     allowed_commands: tuple[str, ...]
     forbidden_commands: tuple[str, ...]
     allowed_env: tuple[str, ...] = ()
+    skip_repo_parts: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -61,7 +62,7 @@ class StageConfig:
     commands: tuple[str, ...] = ()
     output: str | None = None
     on_fail: str | None = None
-    on_pass: str | None = None
+    on_status: dict[str, str] | None = None
     shell: bool = True
     timeout_seconds: int | None = None
     working_dir: Path | None = None
@@ -184,6 +185,9 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
     )
 
     safety_raw = _require_mapping(raw["safety"], "safety")
+    skip_repo_parts = _string_tuple(
+        safety_raw.get("skip_repo_parts", []), "safety.skip_repo_parts"
+    )
     safety = SafetyConfig(
         require_clean_worktree=_optional_bool(
             safety_raw.get("require_clean_worktree", False),
@@ -195,6 +199,7 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
             safety_raw.get("forbidden_commands", []), "safety.forbidden_commands"
         ),
         allowed_env=_string_tuple(safety_raw.get("allowed_env", []), "safety.allowed_env"),
+        skip_repo_parts=skip_repo_parts,
     )
 
     agents_raw = _require_mapping(raw["agents"], "agents")
@@ -393,7 +398,7 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
                 commands=commands,
                 output=_optional_string(stage_raw.get("output"), f"{stage_context}.output"),
                 on_fail=_optional_string(stage_raw.get("on_fail"), f"{stage_context}.on_fail"),
-                on_pass=_optional_string(stage_raw.get("on_pass"), f"{stage_context}.on_pass"),
+                on_status=_parse_on_status(stage_raw, stage_context),
                 shell=_optional_bool(stage_raw.get("shell", True), f"{stage_context}.shell"),
                 timeout_seconds=timeout_seconds,
                 working_dir=Path(working_dir_raw) if working_dir_raw else None,
@@ -418,10 +423,13 @@ def parse_config(raw: dict[str, Any], config_path: Path) -> NightShiftConfig:
             raise ConfigError(
                 f"Config error: stage '{stage.id}' on_fail references unknown stage '{stage.on_fail}'."
             )
-        if stage.on_pass and stage.on_pass not in stage_ids:
-            raise ConfigError(
-                f"Config error: stage '{stage.id}' on_pass references unknown stage '{stage.on_pass}'."
-            )
+        if stage.on_status:
+            for status_key, target in stage.on_status.items():
+                if target not in stage_ids:
+                    raise ConfigError(
+                        f"Config error: stage '{stage.id}' on_status.{status_key} "
+                        f"references unknown stage '{target}'."
+                    )
 
     return NightShiftConfig(
         path=config_path,
@@ -635,3 +643,27 @@ def _string_tuple(value: Any, context: str) -> tuple[str, ...]:
     if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
         raise ConfigError(f"Config error: '{context}' must be a list of non-empty strings.")
     return tuple(value)
+
+
+VALID_STATUS_KEYS = frozenset({"pass", "fail", "retry", "escalate"})
+
+
+def _parse_on_status(raw: dict[str, Any], context: str) -> dict[str, str] | None:
+    on_status_raw = raw.get("on_status")
+    if on_status_raw is None:
+        return None
+    if not isinstance(on_status_raw, dict):
+        raise ConfigError(f"Config error: {context}.on_status must be a mapping.")
+    on_status: dict[str, str] = {}
+    for key, value in on_status_raw.items():
+        if key not in VALID_STATUS_KEYS:
+            raise ConfigError(
+                f"Config error: {context}.on_status invalid key '{key}'. "
+                f"Valid keys: {', '.join(sorted(VALID_STATUS_KEYS))}."
+            )
+        if not isinstance(value, str) or not value:
+            raise ConfigError(
+                f"Config error: {context}.on_status.{key} must be a non-empty string."
+            )
+        on_status[key] = value
+    return on_status

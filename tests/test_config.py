@@ -55,39 +55,57 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(ConfigError, "on_fail references unknown stage"):
                 load_config(config_path)
 
-    def test_on_pass_must_reference_existing_stage(self) -> None:
+    def test_on_status_parses_correctly(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             init_project(root)
             config_path = root / "nightshift.yaml"
-            config_path.write_text(
-                config_path.read_text(encoding="utf-8").replace(
-                    "on_fail: plan", "on_pass: missing_stage", 1
-                ),
-                encoding="utf-8",
+            text = config_path.read_text(encoding="utf-8")
+            text = text.replace(
+                "      on_fail: implement\n      output: review.md",
+                "      output: review.md\n      on_status:\n        pass: summarize\n        retry: implement\n        fail: plan",
             )
-
-            with self.assertRaisesRegex(ConfigError, "on_pass references unknown stage"):
-                load_config(config_path)
-
-    def test_on_pass_loads(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            init_project(root)
-            config_path = root / "nightshift.yaml"
-            config_path.write_text(
-                config_path.read_text(encoding="utf-8").replace(
-                    "      output: plan.md",
-                    "      output: plan.md\n      on_pass: summarize",
-                    1,
-                ),
-                encoding="utf-8",
-            )
+            config_path.write_text(text, encoding="utf-8")
 
             config = load_config(config_path)
-            plan_stage = next(stage for stage in config.pipeline.stages if stage.id == "plan")
+            review_stage = next(s for s in config.pipeline.stages if s.id == "review")
 
-            self.assertEqual(plan_stage.on_pass, "summarize")
+            self.assertEqual(review_stage.on_status, {
+                "pass": "summarize",
+                "retry": "implement",
+                "fail": "plan",
+            })
+            self.assertIsNone(review_stage.on_fail)
+
+    def test_on_status_rejects_invalid_key(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            init_project(root)
+            config_path = root / "nightshift.yaml"
+            text = config_path.read_text(encoding="utf-8")
+            text = text.replace(
+                "      on_fail: implement\n      output: review.md",
+                "      output: review.md\n      on_status:\n        wat: broken",
+            )
+            config_path.write_text(text, encoding="utf-8")
+
+            with self.assertRaisesRegex(ConfigError, "on_status invalid key"):
+                load_config(config_path)
+
+    def test_on_status_references_unknown_stage(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            init_project(root)
+            config_path = root / "nightshift.yaml"
+            text = config_path.read_text(encoding="utf-8")
+            text = text.replace(
+                "      on_fail: implement\n      output: review.md",
+                "      output: review.md\n      on_status:\n        fail: missing_stage",
+            )
+            config_path.write_text(text, encoding="utf-8")
+
+            with self.assertRaisesRegex(ConfigError, "on_status.fail references unknown stage"):
+                load_config(config_path)
 
     def test_validate_requires_prompt_files(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -370,6 +388,39 @@ class ConfigTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ConfigError, "non-command stage 'plan'"):
                 load_config(config_path)
+
+    def test_on_status_empty_key_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            init_project(root)
+            config_path = root / "nightshift.yaml"
+            text = config_path.read_text(encoding="utf-8")
+            text = text.replace(
+                "      on_fail: implement\n      output: review.md",
+                "      output: review.md\n      on_status:\n        pass: ",
+            )
+            config_path.write_text(text, encoding="utf-8")
+
+            with self.assertRaisesRegex(ConfigError, "must be a non-empty string"):
+                load_config(config_path)
+
+    def test_on_fail_fallback_when_on_status_does_not_cover_status(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            init_project(root)
+            config_path = root / "nightshift.yaml"
+            text = config_path.read_text(encoding="utf-8")
+            text = text.replace(
+                "      on_fail: implement\n      output: review.md",
+                "      output: review.md\n      on_status:\n        pass: summarize\n      on_fail: implement",
+            )
+            config_path.write_text(text, encoding="utf-8")
+
+            config = load_config(config_path)
+            review_stage = next(s for s in config.pipeline.stages if s.id == "review")
+
+            self.assertEqual(review_stage.on_status, {"pass": "summarize"})
+            self.assertEqual(review_stage.on_fail, "implement")
 
 
 if __name__ == "__main__":
