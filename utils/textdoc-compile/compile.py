@@ -286,7 +286,7 @@ def assemble_markdown(opts: BuildOptions) -> str:
     # Optional cover reference for markdown/html.
     cover_path = story_dir / "cover.png"
     if cover_path.exists():
-        parts.append("![Cover](../cover.png)")
+        parts.append("![Cover](cover.png)")
         parts.append(r"\newpage")
 
     # TITLE.md wins over metadata title page.
@@ -439,39 +439,40 @@ def markdown_to_html(md: str, metadata: Metadata) -> str:
 # ----------------------------
 
 def write_pdf(md: str, output_path: Path, metadata: Metadata, pdf_style: str) -> None:
-    try:
-        from reportlab.lib.enums import TA_CENTER, TA_LEFT
-        from reportlab.lib.pagesizes import A5, LETTER
-        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-        from reportlab.lib.units import inch
-        from reportlab.platypus import (
-            SimpleDocTemplate,
-            Paragraph,
-            Spacer,
-            PageBreak,
-        )
-    except ImportError as exc:
-        raise RuntimeError("Missing dependency: pip install reportlab") from exc
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    from reportlab.lib.pagesizes import A5, LETTER
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import inch
+    from reportlab.platypus import (
+        SimpleDocTemplate,
+        Paragraph,
+        Spacer,
+        PageBreak,
+        Image,
+    )
+
+    story_dir = output_path.parent.parent
+    cover_path = story_dir / "cover.png"
 
     if pdf_style == "paperback":
         pagesize = A5
-        margins = dict(
-            leftMargin=0.65 * inch,
-            rightMargin=0.65 * inch,
-            topMargin=0.7 * inch,
-            bottomMargin=0.7 * inch,
-        )
+        margins = {
+            "leftMargin": 0.65 * inch,
+            "rightMargin": 0.65 * inch,
+            "topMargin": 0.7 * inch,
+            "bottomMargin": 0.7 * inch,
+        }
         body_size = 10.5
         leading = 15
 
     elif pdf_style == "manuscript":
         pagesize = LETTER
-        margins = dict(
-            leftMargin=1 * inch,
-            rightMargin=1 * inch,
-            topMargin=1 * inch,
-            bottomMargin=1 * inch,
-        )
+        margins = {
+            "leftMargin": 1 * inch,
+            "rightMargin": 1 * inch,
+            "topMargin": 1 * inch,
+            "bottomMargin": 1 * inch,
+        }
         body_size = 12
         leading = 24
 
@@ -534,64 +535,84 @@ def write_pdf(md: str, output_path: Path, metadata: Metadata, pdf_style: str) ->
 
     story = []
 
-    paragraphs = md.splitlines()
-    buffer: list[str] = []
+    if cover_path.exists():
+        printable_w = pagesize[0] - margins["leftMargin"] - margins["rightMargin"] - 8
+        printable_h = pagesize[1] - margins["topMargin"] - margins["bottomMargin"] - 8
 
-    def flush_paragraph():
-        nonlocal buffer
+        img = Image(str(cover_path))
+        scale = min(
+            printable_w / img.imageWidth,
+            printable_h / img.imageHeight,
+            1.0,
+        )
+
+        img.drawWidth = img.imageWidth * scale
+        img.drawHeight = img.imageHeight * scale
+
+        story.append(img)
+        story.append(PageBreak())
+
+    def add_page_number(canvas, doc):
+        canvas.saveState()
+        canvas.setFont("Times-Roman", 9)
+        canvas.drawCentredString(pagesize[0] / 2, 0.35 * inch, str(doc.page))
+        canvas.restoreState()
+
+    def flush_paragraph(buffer):
         text = " ".join(x.strip() for x in buffer).strip()
-        buffer = []
+        if text:
+            story.append(Paragraph(html.escape(text), body))
+        return []
 
-        if not text:
-            return
+    buffer = []
 
-        safe = html.escape(text)
-        story.append(Paragraph(safe, body))
-
-    for line in paragraphs:
+    for line in md.splitlines():
         stripped = line.strip()
 
+        if stripped.startswith("!["):
+            buffer = flush_paragraph(buffer)
+            continue
+
         if stripped == r"\newpage":
-            flush_paragraph()
+            buffer = flush_paragraph(buffer)
             story.append(PageBreak())
             continue
 
         if not stripped:
-            flush_paragraph()
+            buffer = flush_paragraph(buffer)
             story.append(Spacer(1, 6))
             continue
 
         if stripped.startswith("# "):
-            flush_paragraph()
+            buffer = flush_paragraph(buffer)
             story.append(Paragraph(html.escape(stripped[2:].strip()), h1))
             continue
 
         if stripped.startswith("## "):
-            flush_paragraph()
+            buffer = flush_paragraph(buffer)
             story.append(Paragraph(html.escape(stripped[3:].strip()), h2))
             continue
 
         if stripped.startswith("### "):
-            flush_paragraph()
+            buffer = flush_paragraph(buffer)
             story.append(Paragraph(html.escape(stripped[4:].strip()), h3))
             continue
 
-        # crude markdown list support
         if re.match(r"^[-*]\s+", stripped):
-            flush_paragraph()
+            buffer = flush_paragraph(buffer)
             item = re.sub(r"^[-*]\s+", "• ", stripped)
             story.append(Paragraph(html.escape(item), body))
             continue
 
-        # skip images in ReportLab for now
-        if stripped.startswith("!["):
-            flush_paragraph()
-            continue
-
         buffer.append(stripped)
 
-    flush_paragraph()
-    doc.build(story)
+    buffer = flush_paragraph(buffer)
+
+    doc.build(
+        story,
+        onFirstPage=add_page_number,
+        onLaterPages=add_page_number,
+    )
 
 
 # ----------------------------

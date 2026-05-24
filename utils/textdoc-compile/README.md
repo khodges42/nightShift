@@ -82,7 +82,7 @@ pip install markdown reportlab
 # Quick Start
 
 ```powershell
-python compile_story.py --root .
+python compile.py --root .
 ```
 
 Outputs:
