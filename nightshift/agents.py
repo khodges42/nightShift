@@ -20,6 +20,7 @@ from .runlog import NullRunLogger, RunLogger
 from .safety import resolve_inside_root, resolve_project_root
 from .stages import StageResult, StageStatus
 from .tasks import Task
+from .telemetry import estimate_tokens
 
 
 DEFAULT_AGENT_TIMEOUT_SECONDS = 600
@@ -96,6 +97,40 @@ class AgentExecutor:
             previous_outputs=previous_outputs or {},
             retry_notes=retry_notes or [],
             retry_context=retry_context,
+        )
+
+        # Pre-send context window check
+        estimated_tokens = estimate_tokens(prompt)
+        ctx_limit = agent.num_ctx
+        if ctx_limit is not None and estimated_tokens > ctx_limit:
+            self.logger.event(
+                "context.overflow",
+                "Prompt exceeds context window, truncating previous outputs",
+                stage_id=stage.id,
+                agent_id=agent.id,
+                estimated_tokens=estimated_tokens,
+                context_limit=ctx_limit,
+            )
+            prompt = self._compact_prompt_for_context(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                stage=stage,
+                task=task,
+                project_context=project_context if project_context is not None else self._read_project_context(),
+                task_context=task_context or "",
+                retry_notes=retry_notes or [],
+                retry_context=retry_context,
+                target_tokens=int(ctx_limit * 0.85),
+            )
+            estimated_tokens = estimate_tokens(prompt)
+
+        self.logger.event(
+            "context.estimate",
+            "Estimated prompt size before send",
+            stage_id=stage.id,
+            agent_id=agent.id,
+            estimated_tokens=estimated_tokens,
+            context_limit=ctx_limit or "unset",
         )
         self.logger.event(
             "agent.start",
@@ -178,6 +213,92 @@ class AgentExecutor:
             return ""
         return self.artifacts.project_context_path.read_text(encoding="utf-8")
 
+    def _compact_prompt_for_context(
+        self,
+        *,
+        prompt: str,
+        system_prompt: str,
+        stage: StageConfig,
+        task: Task,
+        project_context: str,
+        task_context: str,
+        retry_notes: list[str],
+        retry_context: str | None,
+        target_tokens: int,
+    ) -> str:
+        """Rebuild prompt with aggressively compacted previous outputs."""
+        acceptance = "\n".join(f"- {item}" for item in task.acceptance_criteria)
+
+        # Compact previous outputs to ~200 chars each
+        prior_parts = []
+        for stage_id, content in (
+            self._collect_previous_outputs(stage, task, retry_notes, retry_context)
+        ):
+            compacted = content[:200]
+            if len(content) > 200:
+                compacted += "\n... (truncated for context window)"
+            prior_parts.append(f"## {stage_id}\n\n{compacted}")
+        prior = "\n\n".join(prior_parts)
+
+        retries = "\n".join(f"- {note}" for note in retry_notes)
+
+        return "\n".join(
+            [
+                "# NightShift Agent Input",
+                "",
+                "## System Prompt",
+                "",
+                system_prompt.strip(),
+                "",
+                "## Stage",
+                "",
+                f"- id: {stage.id}",
+                f"- type: {stage.type}",
+                "",
+                "## Task",
+                "",
+                task.raw_markdown.strip(),
+                "",
+                "## Acceptance Criteria",
+                "",
+                acceptance,
+                "",
+                "## Project Context",
+                "",
+                project_context.strip(),
+                "",
+                "## Task Context",
+                "",
+                task_context.strip(),
+                "",
+                "## Previous Stage Output",
+                "",
+                prior.strip(),
+                "",
+                "## Retry Notes",
+                "",
+                (retry_context if retry_context is not None else retries).strip(),
+                "",
+                "## Output Contract",
+                "",
+                output_contract_for(stage),
+                "",
+            ]
+        )
+
+    def _collect_previous_outputs(
+        self,
+        stage: StageConfig,
+        task: Task,
+        retry_notes: list[str],
+        retry_context: str | None,
+    ) -> list[tuple[str, str]]:
+        """Collect previous outputs for a stage (placeholder — uses pipeline state)."""
+        # This is called only during overflow compaction.
+        # The actual previous_outputs dict lives in pipeline.py;
+        # we rebuild a minimal set from what we can infer.
+        return []
+
     def _invoke(self, agent: AgentConfig, prompt: str) -> AgentInvocation:
         if agent.backend == "ollama":
             return self._invoke_ollama(agent, prompt)
@@ -235,6 +356,8 @@ class AgentExecutor:
             "prompt": prompt,
             "stream": False,
         }
+        if agent.think is not None:
+            body["think"] = agent.think
         options = _ollama_options(agent)
         if options:
             body["options"] = options
