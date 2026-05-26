@@ -201,7 +201,7 @@ def parse_lookup_requests(text: str, max_requests: int = DEFAULT_MAX_LOOKUP_REQU
         current = {}
 
     for raw_line in lines:
-        stripped = raw_line.strip()
+        stripped = raw_line.strip().strip("`")
         if stripped in {"lookup_requests:", "repo_lookup:", "repo_lookups:"}:
             in_section = True
             continue

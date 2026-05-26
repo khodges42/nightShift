@@ -120,10 +120,20 @@ def tail_lines(path: Path, limit: int = 100) -> list[str]:
 
 def _redact_fields(fields: dict[str, object]) -> dict[str, object]:
     redacted: dict[str, object] = {}
+    safe_metrics = {"prompt_tokens", "output_tokens", "total_tokens",
+                    "actual_prompt_tokens", "actual_output_tokens"}
     for key, value in fields.items():
-        lowered = key.lower()
-        if any(marker in lowered for marker in ("secret", "token", "password", "key")):
+        if key in safe_metrics:
+            redacted[key] = value
+        elif _looks_like_secret(key):
             redacted[key] = "<redacted>"
         else:
             redacted[key] = value
     return redacted
+
+
+def _looks_like_secret(key: str) -> bool:
+    lowered = key.lower()
+    sensitive = {"secret", "password", "api_key", "auth_token", "access_token",
+                 "secret_key", "private_key", "db_password"}
+    return lowered in sensitive
